@@ -136,16 +136,18 @@ namespace LogTest3.Layouts
                     }
 
                 }
-
-                writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}");
+                //CloudWatch doesn't need the timestamp
+                //writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}");
+                writer.WriteLine(splunkString);
 
             }
 
             catch (Exception e)
 
             {
-
-                writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString()}");
+                //CloudWatch doesn't need the timestamp
+                //writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString()}");
+                writer.WriteLine(e.ToSplunkString());
 
             }
 
