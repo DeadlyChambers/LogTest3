@@ -2,10 +2,12 @@
 using Amazon.S3.Model;
 using log4net.Appender;
 using log4net.Core;
+using LogTest3.Layouts;
 using System;
 using System.Configuration;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
@@ -90,12 +92,19 @@ namespace LogTest3.Appenders
         }
 
         private void UploadEvent(LoggingEvent loggingEvent, AmazonS3Client client)
-        {           
+        {
+            var timeZone = TimeZoneInfo.Local.IsDaylightSavingTime(loggingEvent.TimeStamp)
+                ? "CDT"
+                : "CST";
+
             _ = client.PutObjectAsync(new PutObjectRequest
             {
                 BucketName = _bucketName,
                 Key = Filename(Guid.NewGuid().ToString()),
-                ContentBody = Utility.GetXmlString(loggingEvent)
+              //  ContentBody = Utility.GetXmlString(loggingEvent)
+              ContentBody = $"{loggingEvent.TimeStamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")} {timeZone}" + new StringBuilder(
+                  loggingEvent.ToLogRecord("S3AppenderDomainHardCoded","LogTest3AssemblyHardCoded", true)
+                  .ToSplunkString()).ToString()
             }).Result;
 
             // log.txt
@@ -104,7 +113,8 @@ namespace LogTest3.Appenders
 
         private static string Filename(string key)
         {
-            return string.Format("s3appender.{0}.log4net.xml", key);
+            // return string.Format("s3appender.{0}.log4net.xml", key);
+            return string.Format("s3appender.{0}.txt", key);
         }
     }
 
