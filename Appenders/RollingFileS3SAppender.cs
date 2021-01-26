@@ -137,7 +137,7 @@ namespace LogTest3.Appenders
         {
             //var ip = Dns.GetHostAddresses(Dns.GetHostName()).Select(x => x.ToString()).FirstOrDefault(x => x.Length >= 7 && x.Length <= 15).Replace(".", "-");
             var name = "S3RollingAppender";
-            return string.Format("{0}{1}_{2}.txt", LogDirectory, name, CountObjects(name));
+            return string.Format("{0}{1}_{2}{3}.txt", LogDirectory, name, DateTime.Now.ToString("MM_dd_yyyy") ,CountObjects(name));
         }
 
         private int CountObjects(string name)

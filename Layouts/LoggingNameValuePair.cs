@@ -32,7 +32,7 @@ namespace LogTest3.Layouts
             var splunkString = new StringBuilder();
             foreach (var kvp in Pairs)
             {
-               // splunkString.Append(SplunkUtils.SplunkifyKeyValue(kvp.Key, kvp.Value?.ToString()));
+               splunkString.Append(SplunkUtils.SplunkifyKeyValue(kvp.Key, kvp.Value?.ToString()));
             }
             return splunkString.ToString().TrimEnd(',');
         }

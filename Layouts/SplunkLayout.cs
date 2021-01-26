@@ -47,6 +47,12 @@ namespace LogTest3.Layouts
 
         public string TimestampFormat { get; set; }
 
+        /// <summary>
+        /// The Rolling Appender isn't exposing the LogEvent the way the non-Rolling is, so adding
+        /// the timeStamp back in sort of makes sense.
+        /// </summary>
+        public bool WithTimeStamp { get; set; }
+
 
 
         /// <summary>
@@ -137,7 +143,9 @@ namespace LogTest3.Layouts
 
                 }
                 //CloudWatch doesn't need the timestamp
-                //writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}");
+                if(WithTimeStamp)
+                writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}");
+                else
                 writer.WriteLine(splunkString);
 
             }
@@ -146,8 +154,10 @@ namespace LogTest3.Layouts
 
             {
                 //CloudWatch doesn't need the timestamp
-                //writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString()}");
-                writer.WriteLine(e.ToSplunkString());
+                if(WithTimeStamp)
+                    writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString()}");
+                else
+                    writer.WriteLine(e.ToSplunkString());
 
             }
 
