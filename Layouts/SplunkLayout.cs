@@ -53,8 +53,15 @@ namespace LogTest3.Layouts
         /// </summary>
         public bool WithTimeStamp { get; set; }
 
+        /// <summary>
+        /// Testing Metrics on Cloud Watch. The double qoutes are causing issues.
+        /// </summary>
+        public bool IncludeLevel { get; set; }
 
-
+        /// <summary>
+        /// Could use csv to change how to object is formatted
+        /// </summary>
+        public string ObjectFormat { get; set; } = "txt";
         /// <summary>
 
         /// The optional entry assembly name is set in the Log4Net.config, used to determine
@@ -110,19 +117,22 @@ namespace LogTest3.Layouts
                 ? "CDT"
 
                 : "CST";
-
+            var isCsv = ObjectFormat == "csv";
             try
 
             {
 
                 var httpRequestLogDto = loggingEvent.ToHttpRequestLogDto(true);
+                var level = "Level:"+loggingEvent.Level.ToString();
+                
 
                 var splunkString = httpRequestLogDto == null
 
-                    ? new StringBuilder(loggingEvent.ToLogRecord(LoggedProcessId, EntryAssemblyName, true).ToSplunkString())
+                    ? new StringBuilder(loggingEvent.ToLogRecord(LoggedProcessId, EntryAssemblyName, true).ToSplunkString(isCsv))
 
-                    : new StringBuilder(httpRequestLogDto.ToSplunkString());
-
+                    : new StringBuilder(httpRequestLogDto.ToSplunkString(isCsv));
+                if (IncludeLevel)
+                    splunkString = new StringBuilder($"{level},{splunkString}");
                 //If we have sent a splunk key value pair in, we are specifically trying to disply
 
                 //splunk information in the logs
@@ -136,7 +146,7 @@ namespace LogTest3.Layouts
                     if (splunkKvp.Pairs != null)
 
                     {
-
+                       
                         splunkString.Append($",{splunkKvp.ToSplunkFormat()}");
 
                     }
@@ -155,9 +165,9 @@ namespace LogTest3.Layouts
             {
                 //CloudWatch doesn't need the timestamp
                 if(WithTimeStamp)
-                    writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString()}");
+                    writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{e.ToSplunkString(isCsv)}");
                 else
-                    writer.WriteLine(e.ToSplunkString());
+                    writer.WriteLine(e.ToSplunkString(isCsv));
 
             }
 
@@ -185,7 +195,7 @@ namespace LogTest3.Layouts
 
         /// <returns></returns>
 
-        public static string ToSplunkString(this object @this)
+        public static string ToSplunkString(this object @this, bool isCSv = false)
 
         {
 
@@ -197,7 +207,7 @@ namespace LogTest3.Layouts
 
             {
 
-                logString.Append(SplunkUtils.SplunkifyKeyValue(item.Name, item.GetValue(@this, null)?.ToString()));
+                logString.Append(SplunkUtils.SplunkifyKeyValue(item.Name, item.GetValue(@this, null)?.ToString(), isCSv));
 
             }
 
@@ -217,7 +227,7 @@ namespace LogTest3.Layouts
 
         /// <returns></returns>
 
-        public static string SplunkifyKeyValue(string key, string value)
+        public static string SplunkifyKeyValue(string key, string value, bool asCsv = false)
 
         {
 
@@ -252,8 +262,8 @@ namespace LogTest3.Layouts
                     .Replace("\"", string.Empty).Replace("{", string.Empty).Replace("}", string.Empty).Replace("[", string.Empty).Replace("]", string.Empty); //For objects
 
             }
-
-            return $" {displayName}=\"{value}\",";
+           
+            return asCsv? $" {value},": $" {displayName}=\"{value}\",";
 
         }
 

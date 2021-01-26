@@ -41,6 +41,9 @@ namespace LogTest3
 
             app.UseAuthorization();
 
+            // global error handler
+            app.UseMiddleware<ErrorHandlerMiddleware>();
+
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();

@@ -50,6 +50,9 @@ namespace LogTest3.Appenders
 
         private bool _createBucket = true;
 
+
+        public string Format { get { return _format; } set { _format = value; } }
+        private string _format = "txt";
         /// <summary>
         /// If true, checks whether the bucket already exists and if not creates it.
         /// If false, assumes that the bucket is already created and does not check.
@@ -137,9 +140,10 @@ namespace LogTest3.Appenders
         {
             //var ip = Dns.GetHostAddresses(Dns.GetHostName()).Select(x => x.ToString()).FirstOrDefault(x => x.Length >= 7 && x.Length <= 15).Replace(".", "-");
             var name = "S3RollingAppender";
-            return string.Format("{0}{1}_{2}{3}.txt", LogDirectory, name, DateTime.Now.ToString("MM_dd_yyyy") ,CountObjects(name));
+            return string.Format("{0}{1}_{2}{3}.{4}", LogDirectory, name, DateTime.Now.ToString("MM_dd_yyyy") ,CountObjects(name), Format);
         }
 
+        
         private int CountObjects(string name)
         {
             var prefix = String.Format("{0}{1}", LogDirectory, name);

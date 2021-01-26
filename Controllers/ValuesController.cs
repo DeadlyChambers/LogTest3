@@ -30,9 +30,9 @@ namespace LogTest3.Controllers
             //}
 
             var dt = DateTime.Now.ToString("G");
-            var id = "DefaultGet";
-            Logger.Debug(id + " - " + dt);
-            _logger.Debug(id + " - " + dt);
+            var title = "DefaultGet";
+            Logger.Debug("Static" + title + " - " + dt);
+            _logger.Debug("Dynamic" + title + " - " + dt);
             return new string[] { "value1", "value2" };
         }
 
@@ -45,20 +45,43 @@ namespace LogTest3.Controllers
                var randoms = Enumerable.Range(1, 1000).Select(x => new SomeRandomClass { id = x }).ToArray();
                 _logger.Debug(JsonConvert.SerializeObject(randoms));
             }
+            else if(id == 422)
+            {
+                var exc = new Exception("There was an exception created by the app");
+                _logger.Error("ErrorMessage Generated intentionally by app", exc);
+            }
+            else if(id > 201 && id < 300)
+            {
+                var rando = new SomeRandomClass { id = id };
+                _logger.Info($"Writing some info messages {JsonConvert.SerializeObject(rando)}");
+            }
+            else if(id == 400)
+            {
+                throw new AppException("Random Error thrown by app code");
+            }
+            else if (id == 401)
+            {
+                throw new KeyNotFoundException("Another Random Error thrown by app code");
+            }
+            else if (id == 402)
+            {
+                throw new ApplicationException("Another Random Error created and thrown by app code");
+            }
             var dt = DateTime.Now.ToString("G");
             var title = "ValueGet-" + id;
-            Logger.Debug(title + " - " + dt);
-            _logger.Debug(title + " - " + dt);
+            Logger.Debug("Static"+title + " - " + dt);
+            _logger.Debug("Dynamic"+title + " - " + dt);
             return "value";
         }
 
         // POST api/values
         [HttpPost]
-        public void Post([FromBody] string value)
+        public void Post([FromBody] string title)
         {
             var dt = DateTime.Now.ToString("G");
-            Logger.Debug(value + " - " + dt);
-            _logger.Info(value + " - " + dt);
+            Logger.Debug("Static" + title + " - " + dt);
+            _logger.Debug("Dynamic" + title + " - " + dt);
+
         }
 
         // PUT api/values/5
