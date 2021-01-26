@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LogTest3.Appenders
 {
@@ -85,11 +86,12 @@ namespace LogTest3.Appenders
         {
             ListBucketsResponse response = Client.ListBucketsAsync().Result;
             bool found = response.Buckets.Any(bucket => bucket.BucketName == BucketName);
-
+            
             if (found == false)
             {
                 _ = Client.PutBucketAsync(new PutBucketRequest() { BucketName = BucketName }).Result;
             }
+            //CreateBucket = false;
             return Client;
         }
 
@@ -115,15 +117,15 @@ namespace LogTest3.Appenders
         /// Upload the log file to S3 Bucket.
         /// </summary>
         /// <param name="content"></param>
-        private void UploadEvent(string content)
+        private async Task  UploadEvent(string content)
         {
             string key = Guid.NewGuid().ToString();          
-            _ =Client.PutObjectAsync(new PutObjectRequest
+            _ = await Client.PutObjectAsync(new PutObjectRequest
             {
                 BucketName = BucketName,
                 Key = Filename(),
                 ContentBody = content
-            }).Result;
+            });
         }
 
         /// <summary>
@@ -133,13 +135,14 @@ namespace LogTest3.Appenders
         /// <returns></returns>
         private string Filename()
         {
-            var ip = Dns.GetHostAddresses(Dns.GetHostName()).Select(x => x.ToString()).FirstOrDefault(x => x.Length >= 7 && x.Length <= 15).Replace(".", "-");
-            return string.Format("{0}{1}_{2}.txt", LogDirectory, ip, CountObjects(ip));
+            //var ip = Dns.GetHostAddresses(Dns.GetHostName()).Select(x => x.ToString()).FirstOrDefault(x => x.Length >= 7 && x.Length <= 15).Replace(".", "-");
+            var name = "S3RollingAppender";
+            return string.Format("{0}{1}_{2}.txt", LogDirectory, name, CountObjects(name));
         }
 
-        private int CountObjects(string ip)
+        private int CountObjects(string name)
         {
-            var prefix = String.Format("{0}{1}", LogDirectory, ip);
+            var prefix = String.Format("{0}{1}", LogDirectory, name);
             var list = Client.ListObjectsAsync(BucketName, prefix).Result;
             var count = list.S3Objects.Count;
             var emptyFolder = count == 1 && list.S3Objects.FirstOrDefault().Key.Equals(LogDirectory);

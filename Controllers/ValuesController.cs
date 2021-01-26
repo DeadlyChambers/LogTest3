@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Reflection;
 using log4net.Repository.Hierarchy;
+using Newtonsoft.Json;
 
 namespace LogTest3.Controllers
 {
@@ -39,6 +40,11 @@ namespace LogTest3.Controllers
         [HttpGet("{id}")]
         public ActionResult<string> Get(int id)
         {
+            if(id> 501)
+            {
+               var randoms = Enumerable.Range(1, 1000).Select(x => new SomeRandomClass { id = x }).ToArray();
+                _logger.Debug(JsonConvert.SerializeObject(randoms));
+            }
             var dt = DateTime.Now.ToString("G");
             var title = "ValueGet-" + id;
             Logger.Debug(title + " - " + dt);
@@ -71,5 +77,6 @@ namespace LogTest3.Controllers
     public class SomeRandomClass
     {
         public string Name { get; set; } = "The Name";
+        public int id { get; set; }
     }
 }
