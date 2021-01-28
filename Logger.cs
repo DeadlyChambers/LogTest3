@@ -62,16 +62,16 @@ namespace LogTest3
                 LoggerToMatch = "LogTest3.CloudWatchFilter",
                 AcceptOnMatch = true
             };
+            var non = new log4net.Filter.DenyAllFilter();
+            non.ActivateOptions();
             cwFilter.ActivateOptions();
             cWappender.AddFilter(cwFilter);
-            cWappender.AddFilter(new log4net.Filter.DenyAllFilter());
+            cWappender.AddFilter(non);
             cWappender.ActivateOptions();
             hierarchy.Root.AddAppender(cWappender);
-            hierarchy.Root.Level = Level.All;
-            hierarchy.Configured = true;
         }
         public static void ConfigureLog4net()
-        {
+        {            
             Hierarchy hierarchy = (Hierarchy)LogManager.GetRepository(Assembly.GetEntryAssembly());
             var splunkLayoutS3 = new SplunkLayout()
             {
@@ -100,17 +100,17 @@ namespace LogTest3
                 LoggerToMatch = "LogTest3.HtmlFilter",
                 AcceptOnMatch = true
             };
+            var non = new log4net.Filter.DenyAllFilter();
+                non.ActivateOptions();
             htmlFilter.ActivateOptions();
             s3appender.AddFilter(htmlFilter);
-            s3appender.AddFilter(new log4net.Filter.DenyAllFilter());
+            s3appender.AddFilter(non);
 
             s3appender.ActivateOptions();
             hierarchy.Root.AddAppender(s3appender);
            
 
-            hierarchy.Root.Level = Level.All;
-           
-            hierarchy.Configured = true;
+         
         }
     }
 

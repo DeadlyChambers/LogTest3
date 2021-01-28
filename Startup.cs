@@ -30,9 +30,8 @@ namespace LogTest3
                 app.UseDeveloperExceptionPage();
             }
             loggerFactory.AddLog4Net();
-            
-            //How to setup the non config version. for some reason though I am not
-            //able to write any of my debug statements, so I am leaving it out for now
+
+            //TODO: Some c# configurations for Log4net
             NoConfigLogger.ConfigureLog4net();
             NoConfigLogger.ConfigureCloudWatchLog4net();
 
