@@ -114,12 +114,26 @@ namespace LogTest3
         }
     }
 
+    /// <summary>
+    /// Simple class to help isolate the Log4net.config LoggerMatch
+    /// </summary>
     public class HtmlFilter
     {
 
     }
 
+    /// <summary>
+    /// Simple class to help isolate the Log4net.config LoggerMatch
+    /// </summary>
     public class CloudWatchFilter
+    {
+
+    }
+
+    /// <summary>
+    /// Simple class to help isolate the Log4net.config LoggerMatch
+    /// </summary>
+    public class JsonFilter
     {
 
     }

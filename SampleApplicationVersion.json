@@ -1,0 +1,3481 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation Sample Template ElasticBeanstalk_in_VPC: Sample template showing how to create an Elastic Beanstalk environment in a VPC. The stack contains 2 subnets: the first subnet is public and contains the load balancer, a NAT device for internet access from the private subnet and a bastion host to allow SSH access to the Elastic Beanstalk hosts. The second subnet is private and contains the Elastic Beanstalk instances. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "BastionKeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the bastion host",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the Elastic Beanstalk hosts",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "SSHLocation": {
+            "Description": "Lockdown SSH access to the bastion host (default can be accessed from anywhere)",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+        },
+        "BastionInstanceType": {
+            "Description": "Bastion Host EC2 instance type",
+            "Type": "String",
+            "Default": "t1.micro",
+            "AllowedValues": [
+                "t1.micro",
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m1.small",
+                "m1.medium",
+                "m1.large"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "NATInstanceType": {
+            "Description": "NAT Device EC2 instance type",
+            "Type": "String",
+            "Default": "t1.micro",
+            "AllowedValues": [
+                "t1.micro",
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+				  "m1.small",
+                "m1.medium",
+                "m1.large"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+		"InstanceTypeFamily": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "WebServer EC2 instance type family"
+		},
+		"LogPublicationControl": {
+			"ConstraintDescription": "must be Boolean.",
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "If true customer service logs will be published to S3.",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false"
+		},
+		"InstancePort": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "Listen Port",
+			"Default": "80"
+		},
+		"XRayEnabled": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "Enables AWS X-Ray for your environment.",
+			"Default": "false"
+		},
+		"AWSEBEnvironmentId": {
+			"NoEcho": "true",
+			"Type": "String"
+		},
+		"HooksPkgUrl": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "Hooks package URL",
+			"Default": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/lib/hooks.tar.gz"
+		},
+		"AWSEBEnvironmentName": {
+			"NoEcho": "true",
+			"Type": "String"
+		},
+		"AWSEBReferrerId": {
+			"Default": "",
+			"NoEcho": "true",
+			"Type": "String"
+		},
+		"AppSource": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "The url of the application source.",
+			"Default": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/sampleapp/EBSampleApp-DotNetCore.zip"
+		},
+		"ProxyServer": {
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "Specifies which proxy server to be used for client connections.",
+			"AllowedValues": [
+				"nginx",
+				"none"
+			],
+			"Default": "nginx"
+		},
+		"EnvironmentVariables": {
+			"NoEcho": "true",
+			"Type": "CommaDelimitedList",
+			"Description": "Program environment variables.",
+			"Default": ""
+		},
+		"AWSEBAgentId": {
+			"Default": "",
+			"NoEcho": "true",
+			"Type": "String"
+		},
+		"InstanceType": {
+			"ConstraintDescription": "must be a valid EC2 instance type.",
+			"NoEcho": "true",
+			"Type": "String",
+			"Description": "WebServer EC2 instance type"
+		},
+		"AWSEBEnvironmentBucket": {
+			"NoEcho": "true",
+			"Type": "String"
+		},
+		"ProxyStaticFiles": {
+			"NoEcho": "true",
+			"Type": "CommaDelimitedList",
+			"Description": "A mapping from virtual path to physical path.",
+			"Default": ""
+		}
+    },
+    "Mappings": {
+        "SubnetConfig": {
+            "VPC": {
+                "CIDR": "10.0.0.0/16"
+            },
+            "Public": {
+                "CIDR": "10.0.0.0/24"
+            },
+            "Private": {
+                "CIDR": "10.0.1.0/24"
+            }
+        },
+        "AWSInstanceType2Arch": {
+            "t1.micro": {
+                "Arch": "HVM64"
+            },
+            "t2.nano": {
+                "Arch": "HVM64"
+            },
+            "t2.micro": {
+                "Arch": "HVM64"
+            },
+            "t2.small": {
+                "Arch": "HVM64"
+            },
+            "t2.medium": {
+                "Arch": "HVM64"
+            },
+            "t2.large": {
+                "Arch": "HVM64"
+            },
+            "m1.small": {
+                "Arch": "HVM64"
+            },
+            "m1.medium": {
+                "Arch": "HVM64"
+            },
+            "m1.large": {
+                "Arch": "HVM64"
+            }
+        },
+        "AWSInstanceType2NATArch": {
+            "t1.micro": {
+                "Arch": "NATHVM64"
+            },
+            "t2.nano": {
+                "Arch": "NATHVM64"
+            },
+            "t2.micro": {
+                "Arch": "NATHVM64"
+            },
+            "t2.small": {
+                "Arch": "NATHVM64"
+            },
+            "t2.medium": {
+                "Arch": "NATHVM64"
+            },
+            "t2.large": {
+                "Arch": "NATHVM64"
+            },
+            "m1.small": {
+                "Arch": "NATHVM64"
+            },
+            "m1.medium": {
+                "Arch": "NATHVM64"
+            },
+            "m1.large": {
+                "Arch": "NATHVM64"
+            }
+        },
+        "AWSRegionArch2AMI": {
+            
+            "us-east-1": {
+                "HVM64": "ami-032930428bf1abbff",
+                "HVMG2": "ami-0aeb704d503081ea6"
+            },
+            "us-east-2": {
+                "HVM64": "ami-027cab9a7bf0155df",
+                "HVMG2": "NOT_SUPPORTED"
+            },
+            "us-west-1": {
+                "HVM64": "ami-088c153f74339f34c",
+                "HVMG2": "ami-0a7fc72dc0e51aa77"
+            },
+            "us-west-2": {
+                "HVM64": "ami-01fee56b22f308154",
+                "HVMG2": "ami-0fe84a5b4563d8f27"
+            }
+        },
+        "AWSNATRegionArch2AMI": {
+            
+            "us-east-1": {
+                "NATHVM64": "ami-00a9d4a05375b2763"
+            },
+            "us-east-2": {
+                "NATHVM64": "ami-00d1f8201864cc10c"
+            },
+            "us-west-1": {
+                "NATHVM64": "ami-097ad469381034fa2"
+            },
+            "us-west-2": {
+                "NATHVM64": "ami-0b840e8a1ce4cdf15"
+            }
+        },
+        "Region2Principal": {
+            
+            "us-east-1": {
+                "EC2Principal": "ec2.amazonaws.com",
+                "OpsWorksPrincipal": "opsworks.amazonaws.com"
+            },
+            "us-east-2": {
+                "EC2Principal": "ec2.amazonaws.com",
+                "OpsWorksPrincipal": "opsworks.amazonaws.com"
+            },
+            "us-west-1": {
+                "EC2Principal": "ec2.amazonaws.com",
+                "OpsWorksPrincipal": "opsworks.amazonaws.com"
+            },
+            "us-west-2": {
+                "EC2Principal": "ec2.amazonaws.com",
+                "OpsWorksPrincipal": "opsworks.amazonaws.com"
+            }
+        },
+    "EnvironmentInfoTasks": {
+			"systemtail": {
+				"LocationPrefix": "resources/environments/logs/systemtail/",
+				"AutoClean": "true",
+				"CommandName": "CMD-SystemTailLogs"
+			},
+			"tail": {
+				"LocationPrefix": "resources/environments/logs/tail/",
+				"AutoClean": "true",
+				"CommandName": "CMD-TailLogs"
+			},
+			"publish": {
+				"LocationPrefix": "resources/environments/logs/publish/"
+			},
+			"bundle": {
+				"LocationPrefix": "resources/environments/logs/bundle/",
+				"AutoClean": "true",
+				"CommandName": "CMD-BundleLogs"
+			}
+		},
+		"AWSEBAWSRegionArch2AMIBase": {
+			"ap-south-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-04b1ddd35fd71475a"
+			},
+			"eu-south-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-080807541452b0410"
+			},
+			"us-gov-east-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-6f04ef1e"
+			},
+			"ca-central-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0c3e7f50c89a372ae"
+			},
+			"eu-central-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-03c3a7e4263fd998c"
+			},
+			"us-west-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-03130878b60947df3"
+			},
+			"us-west-2": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0a36eb8fadc976275"
+			},
+			"af-south-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0c6e605ab94c1af57"
+			},
+			"eu-west-3": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-00798d7180f25aac2"
+			},
+			"eu-north-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-02cb52d7ba9887a93"
+			},
+			"DEVO": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0be2609ba883822ec"
+			},
+			"eu-west-2": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0e80a462ede03e653"
+			},
+			"eu-west-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-01720b5f421cf0179"
+			},
+			"ap-northeast-3": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0d7387863fcb80c0e"
+			},
+			"ap-northeast-2": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0094965d55b3bb1ff"
+			},
+			"ap-northeast-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-01748a72bed07727c"
+			},
+			"me-south-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0032aa87bb75498ea"
+			},
+			"sa-east-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-022082b7f1da62478"
+			},
+			"ap-east-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-d60844a7"
+			},
+			"cn-north-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0c1c539eca996ffba"
+			},
+			"us-gov-west-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-2bad964a"
+			},
+			"ap-southeast-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-00b8d9cb8a7161e41"
+			},
+			"ap-southeast-2": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-06ce513624b435a22"
+			},
+			"us-east-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0be2609ba883822ec"
+			},
+			"us-east-2": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0a0ad6b70e61be944"
+			},
+			"cn-northwest-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-0fbceead693066e25"
+			}
+		},
+		"AWSEBOptions": {
+			"options": {
+				"OptionDefinitionOverrideEnabled": true,
+				"AWSEBHealthdGroupId": "",
+				"HaltStartupCommandsOnFailure": "true",
+				"SystemType": "basic",
+				"DNSNameResource": "AWSEBEIP",
+				"UserDataScript": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/lib/UserDataScript.sh",
+				"LaunchType": "Migration",
+				"rpms": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/lib/aws-elasticbeanstalk-tools-1.20-1.noarch.rpm",
+				"FastVersionDeployment": "true",
+				"ServiceRole": "aws-elasticbeanstalk-service-role",
+				"HealthdProxyLogLocation": "",
+				"CommandBasedLeaderElection": "true",
+				"platformLibPrefix": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/lib/",
+				"platformengine": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/lib/platform-engine.zip",
+				"CloudConfigOptions": "cloud_final_modules:\n - [scripts-user, always]",
+				"DefaultsScript": "/opt/elasticbeanstalk/config/private/containercommandsupport/container-defaults.sh",
+				"LeaderTestScript": "/opt/elasticbeanstalk/config/private/containercommandsupport/leader-test.sh",
+				"downloadSourceBundleScriptLocation": [
+					"https://s3.amazonaws.com/elasticbeanstalk-env-resources-us-east-1/eb_patching_resources/download_source_bundle.py"
+				],
+				"DefaultSSHPort": "22",
+				"ProxyServer": "nginx",
+				"AWSEBHealthdEndpoint": "https://elasticbeanstalk-health.us-east-1.amazonaws.com",
+				"EnvironmentType": "SingleInstance",
+				"EmbeddedConfigsetsEnabled": "true",
+				"EBSNSTopicArn": "",
+				"nodeploymentOnStartup": "true",
+				"ebpatchscripturl": [
+					"https://s3.amazonaws.com/elasticbeanstalk-env-resources-us-east-1/eb_patching_resources/patch_instance.py"
+				]
+			}
+		},
+		"AWSEBAWSRegionArch2AMI": {
+			"us-east-1": {
+				"pv": "",
+				"graphics": "",
+				"gpu": "",
+				"hvm": "ami-024b85b6e53a82f42"
+			}
+		},
+		"ContainerMeta": {
+			"AMIMeta": {
+				"RepoReleaseVersion": "2.0",
+				"AMIVersion": "2.0.20201218"
+			}
+		}
+	
+	},
+    "Resources": {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "VPC",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                }
+            }
+        },
+        "PublicSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "Public",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                }
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "a53491c6-1104-4948-a1c1-b7e0989426a2"
+                }
+            }
+        },
+        "GatewayToInternet": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "3a144be0-c42a-4ee4-8be3-a621c4bce768"
+                }
+            }
+        },
+        "PublicRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "c686ead1-6afd-4573-ba5c-4a3fb43f87ce"
+                }
+            }
+        },
+        "PublicRoute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "b70a1c5d-51b9-4fa2-aedd-3a79d16fd45e"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "5f69adf9-efbf-4fbb-b615-d8d4812d706b"
+                }
+            }
+        },
+        "PublicNetworkAcl": {
+            "Type": "AWS::EC2::NetworkAcl",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                }
+            }
+        },
+        "InboundHTTPPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "80",
+                    "To": "80"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "b0e5c3c6-a074-466c-aad9-3a9b4bd7bd7b"
+                }
+            }
+        },
+        "InboundHTTPSPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "101",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "443",
+                    "To": "443"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "04f8895e-5939-427a-8381-e665fecb73c3"
+                }
+            }
+        },
+        "InboundSSHPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "102",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": {
+                    "Ref": "SSHLocation"
+                },
+                "PortRange": {
+                    "From": "22",
+                    "To": "22"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "2e7b6e94-2dc5-4e22-97c8-b059c94ab372"
+                }
+            }
+        },
+        "InboundEphemeralPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "103",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "1024",
+                    "To": "65535"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "5d702799-08b2-4998-92e2-19af3fd0c460"
+                }
+            }
+        },
+        "OutboundPublicNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "true",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "0",
+                    "To": "65535"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "046f1071-bedb-40a6-a212-3a6554300fe2"
+                }
+            }
+        },
+        "PublicSubnetNetworkAclAssociation": {
+            "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "NetworkAclId": {
+                    "Ref": "PublicNetworkAcl"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "bcaaa2c3-1d7c-4f6d-8394-1110d32ad92d"
+                }
+            }
+        },
+        "PrivateSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::FindInMap": [
+                        "SubnetConfig",
+                        "Private",
+                        "CIDR"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "c7201adf-2507-4386-b677-68f67d42f176"
+                }
+            }
+        },
+        "PrivateRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "bce39bd7-62cb-4584-ac69-23fd6f73d26d"
+                }
+            }
+        },
+        "PrivateSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "0e83ea1b-578b-43ce-821b-5d9f4dc7695c"
+                }
+            }
+        },
+        "PrivateRoute": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "InstanceId": {
+                    "Ref": "NATDevice"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "ce044fef-168d-4e1b-9dfb-3ad8a6763f6d"
+                }
+            }
+        },
+        "PrivateNetworkAcl": {
+            "Type": "AWS::EC2::NetworkAcl",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "4b571f16-0ba0-4285-a0ae-23ff9678cee2"
+                }
+            }
+        },
+        "InboundPrivateNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PrivateNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "false",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "0",
+                    "To": "65535"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "6d5187af-0b1c-4e4d-a878-8d8f90bd5b96"
+                }
+            }
+        },
+        "OutBoundPrivateNetworkAclEntry": {
+            "Type": "AWS::EC2::NetworkAclEntry",
+            "Properties": {
+                "NetworkAclId": {
+                    "Ref": "PrivateNetworkAcl"
+                },
+                "RuleNumber": "100",
+                "Protocol": "6",
+                "RuleAction": "allow",
+                "Egress": "true",
+                "CidrBlock": "0.0.0.0/0",
+                "PortRange": {
+                    "From": "0",
+                    "To": "65535"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "ce81b042-0ed5-45be-93e8-3fba21bd667b"
+                }
+            }
+        },
+        "PrivateSubnetNetworkAclAssociation": {
+            "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet"
+                },
+                "NetworkAclId": {
+                    "Ref": "PrivateNetworkAcl"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "1954ddc2-f601-453b-b641-31ce614bb836"
+                }
+            }
+        },
+        "NATIPAddress": {
+            "Type": "AWS::EC2::EIP",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "NATDevice"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "fc161ddb-d5e6-49d8-9040-8408f2914395"
+                }
+            }
+        },
+        "NATDevice": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "NATInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "SourceDestCheck": "false",
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSNATRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2NATArch",
+                                {
+                                    "Ref": "NATInstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "NATSecurityGroup"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "f476847d-277e-445c-8ef3-64c91a38bc6c"
+                }
+            }
+        },
+        "NATSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable internal access to the NAT device",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BeanstalkSecurityGroup"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BeanstalkSecurityGroup"
+                        }
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "dd734940-9b55-475f-9a7f-5b1ed1678a89"
+                }
+            }
+        },
+        "BastionIPAddress": {
+            "Type": "AWS::EC2::EIP",
+            "DependsOn": "GatewayToInternet",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "BastionHost"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "bd3ff6b2-a617-41f2-beac-c568b01c813c"
+                }
+            }
+        },
+        "BastionHost": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "BastionInstanceType"
+                },
+                "KeyName": {
+                    "Ref": "BastionKeyName"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2Arch",
+                                {
+                                    "Ref": "BastionInstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "BastionSecurityGroup"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "4d8b7347-aca5-4cfd-8bee-68423e37157e"
+                }
+            }
+        },
+        "BastionSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable access to the Bastion host",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHLocation"
+                        }
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Fn::FindInMap": [
+                                "SubnetConfig",
+                                "Private",
+                                "CIDR"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "aaf70a88-a87b-4e7a-9d02-f203bb68da72"
+                }
+            }
+        },
+        "BeanstalkSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow the Elastic Beanstalk instances to access the NAT device",
+                "VpcId": {
+                    "Ref": "VPC"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "1a99caea-dd1a-4166-8312-f9fcf8ac2fe3"
+                }
+            }
+        },
+        "WebServerRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    {
+                                        "Fn::FindInMap": [
+                                            "Region2Principal",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "EC2Principal"
+                                        ]
+                                    }
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "23aa9ee1-9f49-4e07-be10-a361d51f8f72"
+                }
+            }
+        },
+        "WebServerRolePolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "WebServerRole",
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "NotAction": "iam:*",
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "WebServerRole"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "bd02ab8e-c499-4faf-8c39-c99f9511c104"
+                }
+            }
+        },
+        "WebServerInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "WebServerRole"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "29e359d8-4517-4b82-ba46-757748aae69a"
+                }
+            }
+        },
+        "SampleApplication": {
+            "Type": "AWS::ElasticBeanstalk::Application",
+            "Properties": {
+                "Description": "AWS Elastic Beanstalk Python Sample Application"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "73198e28-af32-4886-a3ed-9b2c9276e9a5"
+                }
+            }
+        },
+        "SampleApplicationVersion": {
+            "Type": "AWS::ElasticBeanstalk::ApplicationVersion",
+            "Properties": {
+                "Description": "Version 1.0",
+                "ApplicationName": {
+                    "Ref": "SampleApplication"
+                },
+                "SourceBundle": {
+                    "S3Bucket": {
+                        "Fn::Join": [
+                            "-",
+                            [
+                                "elasticbeanstalk-samples",
+                                {
+                                    "Ref": "AWS::Region"
+                                }
+                            ]
+                        ]
+                    },
+                    "S3Key": "python-sample.zip"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "10d879da-968c-457c-8f82-d0c9e37bfe01"
+                }
+            }
+        },
+        "SampleEnvironment": {
+            "Type": "AWS::ElasticBeanstalk::Environment",
+            "Properties": {
+                "ApplicationName": {
+                    "Ref": "SampleApplication"
+                },
+                "Description": "AWS Elastic Beanstalk Environment running Python Sample Application",
+                "SolutionStackName": "64bit Amazon Linux 2018.03 v2.7.7 running Python 2.7",
+                "VersionLabel": {
+                    "Ref": "SampleApplicationVersion"
+                },
+                "OptionSettings": [
+                    {
+                        "Namespace": "aws:autoscaling:launchconfiguration",
+                        "OptionName": "SSHSourceRestriction",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "tcp,22,22,",
+                                    {
+                                        "Ref": "BastionSecurityGroup"
+                                    }
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Namespace": "aws:autoscaling:launchconfiguration",
+                        "OptionName": "SecurityGroups",
+                        "Value": {
+                            "Ref": "BeanstalkSecurityGroup"
+                        }
+                    },
+                    {
+                        "Namespace": "aws:autoscaling:launchconfiguration",
+                        "OptionName": "EC2KeyName",
+                        "Value": {
+                            "Ref": "KeyName"
+                        }
+                    },
+                    {
+                        "Namespace": "aws:ec2:vpc",
+                        "OptionName": "VPCId",
+                        "Value": {
+                            "Ref": "VPC"
+                        }
+                    },
+                    {
+                        "Namespace": "aws:ec2:vpc",
+                        "OptionName": "Subnets",
+                        "Value": {
+                            "Ref": "PrivateSubnet"
+                        }
+                    },
+                    {
+                        "Namespace": "aws:ec2:vpc",
+                        "OptionName": "ELBSubnets",
+                        "Value": {
+                            "Ref": "PublicSubnet"
+                        }
+                    },
+                    {
+                        "Namespace": "aws:autoscaling:launchconfiguration",
+                        "OptionName": "IamInstanceProfile",
+                        "Value": {
+                            "Ref": "WebServerInstanceProfile"
+                        }
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "f9ec2186-3752-4634-b5fd-f6270cf7f4e3"
+                }
+            }
+        },
+		"AWSEBSecurityGroup": {
+			"Type": "AWS::EC2::SecurityGroup",
+			 "DependsOn": "BeanstalkSecurityGroup",
+			"Properties": {
+				"GroupDescription": "VPC Security Group",
+				"VpcId": "VPC",
+				"SecurityGroupIngress": [
+					{
+						"CidrIp": "0.0.0.0/0",
+						"FromPort": {
+							"Ref": "InstancePort"
+						},
+						"ToPort": {
+							"Ref": "InstancePort"
+						},
+						"IpProtocol": "tcp"
+					}
+				]
+			}
+		
+		},
+		"AWSEBUpdateWaitConditionHandlettyEpx": {
+			"Type": "AWS::CloudFormation::WaitConditionHandle"
+		},
+		"AWSEBInstanceLaunchWaitHandle": {
+			"Type": "AWS::CloudFormation::WaitConditionHandle"
+		},
+		"AWSEBAutoScalingGroup": {
+			"Metadata": {
+				"ForcingMetadataUpdate": "Changing something in the metadata will force re-compuation",
+				"AWS::CloudFormation::Init": {
+					"Infra-WriteTailLogsConf": {
+						"files": {
+							"/opt/elasticbeanstalk/tasks/taillogs.d/eb-activity.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-commandprocessor.log",
+											"/var/log/eb-activity.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/taillogs.d/eb-version-deployment.conf": {
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-version-deployment.log",
+											""
+										]
+									]
+								}
+							}
+						}
+					},
+					"Infra-WriteBundleLogsConf": {
+						"files": {
+							"/opt/elasticbeanstalk/tasks/bundlelogs.d/eb-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-cfn-init*",
+											"/var/log/eb-tools*",
+											"/var/log/eb-publish-logs*",
+											"/var/log/eb-commandprocessor*",
+											"/var/log/eb-activity*",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/bundlelogs.d/cfn-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cfn-hup*",
+											"/var/log/cfn-init*",
+											"/var/log/cfn-wire*",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/bundlelogs.d/eb-version-deployment.conf": {
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-version-deployment.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/bundlelogs.d/cloud-init-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cloud-init*",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/bundlelogs.d/system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cron",
+											"/var/log/messages",
+											"/var/log/yum.log",
+											""
+										]
+									]
+								}
+							}
+						}
+					},
+					"InfoTask-TailLogs": {
+						"commands": {
+							"taillogs": {
+								"command": {
+									"Fn::Join": [
+										"",
+										[
+											"tailLogs.py --concatenate --conf-path '/opt/elasticbeanstalk/tasks/taillogs.d/*' --location-prefix ",
+											{
+												"Fn::FindInMap": [
+													"EnvironmentInfoTasks",
+													"tail",
+													"LocationPrefix"
+												]
+											}
+										]
+									]
+								}
+							}
+						}
+					},
+					"InfoTask-BundleLogs": {
+						"commands": {
+							"bundlelogs": {
+								"command": {
+									"Fn::Join": [
+										"",
+										[
+											"bundleLogs.py --conf-path '/opt/elasticbeanstalk/tasks/bundlelogs.d/*' --location-prefix ",
+											{
+												"Fn::FindInMap": [
+													"EnvironmentInfoTasks",
+													"bundle",
+													"LocationPrefix"
+												]
+											}
+										]
+									]
+								}
+							}
+						}
+					},
+					"AWSEBCfnHupEndpointOverride": {
+						"files": {
+							"/etc/cfn/endpoints-override.json": {
+								"mode": "000644",
+								"owner": "root",
+								"content": {
+									"Fn::Join": [
+										"",
+										[
+											"{",
+											"\n",
+											"  \"Services\": {",
+											"\n",
+											"    \"AmazonS3\": {",
+											"\n",
+											"      \"Endpoints\": [",
+											"\n",
+											"          { \"Region\": \"us-east-1\", \"Hostname\": \"s3.amazonaws.com\", \"Default\": true },",
+											"\n",
+											"          { \"Region\": \"us-east-1\", \"Hostname\": \"s3-external-1.amazonaws.com\" },",
+											"\n",
+											"          { \"Region\": \"us-east-1\", \"Hostname\": \"s3-external-2.amazonaws.com\" }",
+											"\n",
+											"      ]",
+											"\n",
+											"    },",
+											"\n",
+											"    \"AmazonSQS\": {",
+											"\n",
+											"      \"Endpoints\": [",
+											"\n",
+											"      ]",
+											"\n",
+											"    }",
+											"\n",
+											"  }",
+											"\n",
+											"}",
+											"\n"
+										]
+									]
+								},
+								"group": "root"
+							}
+						},
+						"commands": {
+							"clearbackupfiles": {
+								"command": "rm -f /etc/cfn/endpoints-override.json.bak*"
+							}
+						}
+					},
+					"AWSEBBaseConfig": {
+						"files": {
+							"/opt/elasticbeanstalk/config/ebenvinfo/resource": {
+								"mode": "000440",
+								"owner": "root",
+								"content": "AWSEBAutoScalingGroup",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/guid.json": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/guid.json",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/eventmessages.txt": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/eventmessages.txt",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/ebenvinfo/envid": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Ref": "AWSEBEnvironmentId"
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/ebenvinfo/envbucket": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Ref": "AWSEBEnvironmentBucket"
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/generalconfig.json": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/generalconfig.json",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/ebenvinfo/launchwaithandle": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Ref": "AWSEBInstanceLaunchWaitHandle"
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/platformconfig.json": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/platformconfig.json",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/healthd/healthdendpoint": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Fn::Join": [
+										"",
+										[
+											"{",
+											"\"healthd_endpoint\":",
+											"\"",
+											{
+												"Fn::FindInMap": [
+													"AWSEBOptions",
+													"options",
+													"AWSEBHealthdEndpoint"
+												]
+											},
+											"\"",
+											"}"
+										]
+									]
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/healthd/healthdgroupid": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Fn::Join": [
+										"",
+										[
+											"{",
+											"\"groupId\":",
+											"\"",
+											{
+												"Fn::FindInMap": [
+													"AWSEBOptions",
+													"options",
+													"AWSEBHealthdGroupId"
+												]
+											},
+											"\"",
+											"}"
+										]
+									]
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/bundles.json": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/bundles.json",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformconfig/packages.json": {
+								"mode": "000440",
+								"owner": "root",
+								"source": "https://elasticbeanstalk-platform-assets-us-east-1.s3.amazonaws.com/stalks/eb_dotnetcore_amazon_linux_2_1.0.467.0_20201223180649/configs/packages.json",
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/ebenvinfo/region": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Ref": "AWS::Region"
+								},
+								"group": "root"
+							},
+							"/opt/elasticbeanstalk/config/platformlibprefix": {
+								"mode": "000440",
+								"owner": "root",
+								"content": {
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"platformLibPrefix"
+									]
+								},
+								"group": "root"
+							}
+						},
+						"commands": {
+							"clearbackupfiles": {
+								"command": "cd /opt/elasticbeanstalk/config && find . -name \"*.bak\" -type f -delete"
+							}
+						}
+					},
+					"Hook-PreAppDeploy": {
+						"commands": {
+							"hooks": {
+								"command": "echo place holder"
+							}
+						}
+					},
+					"InfoTask-SystemTailLogs": {
+						"commands": {
+							"systemtaillogs": {
+								"command": {
+									"Fn::Join": [
+										"",
+										[
+											"tailLogs.py --conf-path '/opt/elasticbeanstalk/tasks/systemtaillogs.d/*' --location-prefix ",
+											{
+												"Fn::FindInMap": [
+													"EnvironmentInfoTasks",
+													"systemtail",
+													"LocationPrefix"
+												]
+											}
+										]
+									]
+								}
+							}
+						}
+					},
+					"Infra-WriteSystemTailLogsConf": {
+						"files": {
+							"/opt/elasticbeanstalk/tasks/systemtaillogs.d/eb-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-cfn-init.log",
+											"/var/log/eb-tools.log",
+											"/var/log/eb-publish-logs.log",
+											"/var/log/eb-commandprocessor.log",
+											"/var/log/eb-activity.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/systemtaillogs.d/eb-version-deployment.conf": {
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/eb-version-deployment.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/systemtaillogs.d/cfn-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cfn-hup.log",
+											"/var/log/cfn-init.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/systemtaillogs.d/system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cron",
+											"/var/log/messages",
+											"/var/log/yum.log",
+											""
+										]
+									]
+								}
+							},
+							"/opt/elasticbeanstalk/tasks/systemtaillogs.d/cloud-init-system.conf": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"\n",
+										[
+											"/var/log/cloud-init.log",
+											""
+										]
+									]
+								}
+							}
+						}
+					},
+					"Infra-PatchInstance": {
+						"files": {
+							"/opt/elasticbeanstalk/bin/patch_instance": {
+								"mode": "000750",
+								"owner": "root",
+								"source": {
+									"Fn::Select": [
+										0,
+										{
+											"Fn::FindInMap": [
+												"AWSEBOptions",
+												"options",
+												"ebpatchscripturl"
+											]
+										}
+									]
+								},
+								"group": "root"
+							}
+						},
+						"commands": {
+							"01executepatch": {
+								"command": "/opt/elasticbeanstalk/bin/patch_instance"
+							}
+						}
+					},
+					"Infra-InstallContainerHooksPkg": {
+						"commands": {
+							"01download_container_hooks": {
+								"command": {
+									"Fn::Join": [
+										"",
+										[
+											"curl -sS --retry 3 '",
+											{
+												"Ref": "HooksPkgUrl"
+											},
+											"' -o /tmp/hooks.tar.gz"
+										]
+									]
+								}
+							},
+							"03cleanup": {
+								"command": "rm -f /tmp/hooks.tar.gz"
+							},
+							"00mkdir": {
+								"command": "mkdir -p /opt/elasticbeanstalk"
+							},
+							"02install_container_hooks": {
+								"command": "tar zxf /tmp/hooks.tar.gz --no-same-owner --no-same-permission -C /opt/elasticbeanstalk"
+							}
+						}
+					},
+					"Infra-WritePublishLogsCron": {
+						"files": {
+							"/etc/cron.d/publishlogs": {
+								"mode": "000644",
+								"content": {
+									"Fn::Join": [
+										"",
+										[
+											"SHELL=/bin/bash",
+											"\n",
+											"PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+											"\n",
+											"MAILTO=\"\"",
+											"\n",
+											"HOME=/",
+											"\n",
+											"10,30,50 * * * * root ",
+											"publishLogs.py --de-dupe --conf-path '/opt/elasticbeanstalk/tasks/publishlogs.d/*' --location-prefix ",
+											{
+												"Fn::FindInMap": [
+													"EnvironmentInfoTasks",
+													"publish",
+													"LocationPrefix"
+												]
+											},
+											" --num-concurrent 2",
+											"\n",
+											"05,25,45 * * * * root ",
+											"clearStaleLogPublishingRecords.py",
+											"\n"
+										]
+									]
+								}
+							}
+						}
+					},
+					"Infra-WriteApplication1": {
+						"commands": {
+							"01mkdir": {
+								"command": "rm -rf /opt/elasticbeanstalk/deploy/appsource/; mkdir -p /opt/elasticbeanstalk/deploy/appsource/"
+							}
+						}
+					},
+					"configSets": {
+						"Infra-WriteTailLogsConf": [
+							"Infra-WriteTailLogsConf"
+						],
+						"Infra-WriteBundleLogsConf": [
+							"Infra-WriteBundleLogsConf"
+						],
+						"InfoTask-TailLogs": [
+							"InfoTask-TailLogs"
+						],
+						"InfoTask-BundleLogs": [
+							"InfoTask-BundleLogs"
+						],
+						"_OnInstanceReboot": [
+							"AWSEBBaseConfig"
+						],
+						"_AppInstall": [
+							"Hook-PreAppDeploy"
+						],
+						"Infra-EmbeddedPreBuild": [],
+						"Hook-PreAppDeploy": [
+							"Hook-PreAppDeploy"
+						],
+						"InfoTask-SystemTailLogs": [
+							"InfoTask-SystemTailLogs"
+						],
+						"Infra-WriteSystemTailLogsConf": [
+							"Infra-WriteSystemTailLogsConf"
+						],
+						"_OnInstanceBoot": [
+							"AWSEBBaseConfig",
+							"AWSEBCfnHupEndpointOverride"
+						],
+						"Infra-EmbeddedPostBuild": [],
+						"Infra-WritePublishLogsCron": [
+							"Infra-WritePublishLogsCron"
+						],
+						"Infra-WriteApplication1": [
+							"Infra-WriteApplication1"
+						],
+						"Infra-WriteApplication2": [
+							"Infra-WriteApplication2"
+						],
+						"Infra-WritePublishLogsConf": [
+							"Infra-WritePublishLogsConf"
+						],
+						"_Infra-PatchInstance": [
+							"Infra-PatchInstance"
+						]
+					},
+					"Infra-WriteApplication2": {
+						"files": {
+							"/opt/elasticbeanstalk/bin/download_source_bundle": {
+								"owner": "root",
+								"mode": "000750",
+								"source": {
+									"Fn::Select": [
+										0,
+										{
+											"Fn::FindInMap": [
+												"AWSEBOptions",
+												"options",
+												"downloadSourceBundleScriptLocation"
+											]
+										}
+									]
+								},
+								"group": "root"
+							}
+						},
+						"commands": {
+							"01downloadVersion": {
+								"command": "/opt/elasticbeanstalk/bin/download_source_bundle"
+							},
+							"02deleteVersionDownloadScriptFile": {
+								"command": "rm /opt/elasticbeanstalk/bin/download_source_bundle"
+							}
+						}
+					},
+					"Infra-WritePublishLogsConf": {
+						"files": {}
+					}
+				},
+				"AWS::ElasticBeanstalk::Ext": {
+					"_AppSourceUrlFileContent": {
+						"url": {
+							"Ref": "AppSource"
+						}
+					},
+					"_TriggersConfig": {
+						"configDeploy": {
+							"_Command": "CMD-ConfigDeploy",
+							"_WatchGroups": [
+								"_TriggerConfigDeployment"
+							]
+						},
+						"applicationDeploy": {
+							"_Command": "CMD-AppDeploy",
+							"_WatchGroups": [
+								"_TriggerAppDeployment"
+							]
+						}
+					},
+					"_ParameterTriggers": {
+						"_TriggerConfigDeployment": [
+							"EnvironmentVariables",
+							"InstancePort",
+							"LogPublicationControl",
+							"XRayEnabled",
+							"ProxyStaticFiles",
+							"ProxyServer"
+						],
+						"_TriggerAppDeployment": [
+							"AppSource"
+						]
+					},
+					"_ContainerConfigFileContent": {
+						"container": {
+							"static_files": {
+								"Ref": "ProxyStaticFiles"
+							},
+							"proxy_server": {
+								"Ref": "ProxyServer"
+							},
+							"log_group_name_prefix": "/aws/elasticbeanstalk",
+							"instance_port": {
+								"Ref": "InstancePort"
+							},
+							"xray_enabled": {
+								"Ref": "XRayEnabled"
+							},
+							"default_log_list": [
+								"/var/log/nginx/error.log",
+								"/var/log/nginx/access.log",
+								"/var/log/web.stdout.log"
+							],
+							"common_log_list": [
+								"/var/log/eb-engine.log",
+								"/var/log/eb-hooks.log"
+							],
+							"environment_name": {
+								"Ref": "AWSEBEnvironmentName"
+							}
+						},
+						"optionsettings": {
+							"aws:elasticbeanstalk:application:environment": {
+								"Ref": "EnvironmentVariables"
+							},
+							"aws:elasticbeanstalk:hostmanager": {
+								"LogPublicationControl": {
+									"Ref": "LogPublicationControl"
+								}
+							},
+							"aws:elasticbeanstalk:environment:proxy": {
+								"StaticFiles": {
+									"Ref": "ProxyStaticFiles"
+								},
+								"ProxyServer": {
+									"Ref": "ProxyServer"
+								}
+							},
+							"aws:elasticbeanstalk:healthreporting:system": {
+								"SystemType": "enhanced"
+							}
+						},
+						"system": {
+							"LogPublicationControl": {
+								"Ref": "LogPublicationControl"
+							},
+							"AWSEBAgentId": {
+								"Ref": "AWSEBAgentId"
+							},
+							"AWSEBReferrerId": {
+								"Ref": "AWSEBReferrerId"
+							}
+						},
+						"commands": {
+							"CMD-TailLogs": {
+								"persistent_configuration": true,
+								"stages": [
+									{
+										"name": "TailLogs",
+										"actions": [
+											{
+												"name": "TailLogs",
+												"type": "sh",
+												"value": "tailLogs.py --concatenate --conf-path '/opt/elasticbeanstalk/tasks/taillogs.d/*' --location-prefix 'resources/environments/logs/tail/'"
+											}
+										]
+									}
+								]
+							},
+							"CMD-PreInit": {
+								"refresh_manifest": true,
+								"stages": [
+									{
+										"name": "PreInitStage0",
+										"actions": [
+											{
+												"name": "DownloadSourceBundle",
+												"type": "infra",
+												"value": "/opt/elasticbeanstalk/bin/download-source-bundle"
+											},
+											{
+												"name": "PreInitHook",
+												"type": "hook",
+												"value": "preinit"
+											}
+										]
+									}
+								]
+							},
+							"CMD-Startup": {
+								"stages": [
+									{
+										"name": "StartupStage0",
+										"actions": [
+											{
+												"name": "HealthdLogRotation",
+												"type": "infra",
+												"value": "infra-healthd_log_rotation.rb"
+											},
+											{
+												"name": "HealthdHTTPDLogging",
+												"type": "infra",
+												"value": "infra-healthd_httpd_logging.rb"
+											},
+											{
+												"name": "HealthdNginxLogging",
+												"type": "infra",
+												"value": "infra-healthd_nginx_logging.rb"
+											},
+											{
+												"name": "EbExtensionPreBuild",
+												"type": "infra",
+												"value": "infra-embedded_prebuild.rb"
+											},
+											{
+												"name": "AppDeployPreHook",
+												"type": "hook",
+												"value": "appdeploy/pre"
+											},
+											{
+												"name": "EbExtensionPostBuild",
+												"type": "infra",
+												"value": "infra-embedded_postbuild.rb"
+											},
+											{
+												"name": "InfraCleanEbExtension",
+												"type": "infra",
+												"value": "infra-clean_ebextensions_dir.rb"
+											}
+										]
+									},
+									{
+										"name": "StartupStage1",
+										"actions": [
+											{
+												"name": "AppDeployEnactHook",
+												"type": "hook",
+												"value": "appdeploy/enact"
+											},
+											{
+												"name": "AppDeployPostHook",
+												"type": "hook",
+												"value": "appdeploy/post"
+											},
+											{
+												"name": "PostInitHook",
+												"type": "hook",
+												"value": "postinit"
+											}
+										]
+									}
+								]
+							},
+							"CMD-PublishLogs": {
+								"persistent_configuration": true,
+								"stages": [
+									{
+										"name": "PublishLogs",
+										"actions": [
+											{
+												"name": "PublishLogs",
+												"type": "sh",
+												"value": "publishLogs.py --de-dupe --conf-path '/opt/elasticbeanstalk/tasks/publishlogs.d/*' --location-prefix 'resources/environments/logs/publish/' --num-concurrent 2"
+											}
+										]
+									}
+								]
+							},
+							"CMD-ImmutableDeploymentFlip": {
+								"persistent_configuration": true,
+								"stages": [
+									{
+										"name": "ImmutableDeploymentFlip",
+										"actions": [
+											{
+												"name": "FlipCommandRegistration",
+												"type": "infra",
+												"value": "infra-reregister-cfn-hup.rb"
+											}
+										]
+									}
+								]
+							},
+							"CMD-AppDeploy": {
+								"refresh_manifest": true,
+								"stages": [
+									{
+										"name": "AppDeployStage0",
+										"actions": [
+											{
+												"name": "DownloadSourceBundle",
+												"type": "infra",
+												"value": "/opt/elasticbeanstalk/bin/download-source-bundle"
+											},
+											{
+												"name": "EbExtensionPreBuild",
+												"type": "infra",
+												"value": "infra-embedded_prebuild.rb"
+											},
+											{
+												"name": "AppDeployPreHook",
+												"type": "hook",
+												"value": "appdeploy/pre"
+											},
+											{
+												"name": "EbExtensionPostBuild",
+												"type": "infra",
+												"value": "infra-embedded_postbuild.rb"
+											},
+											{
+												"name": "InfraCleanEbextension",
+												"type": "infra",
+												"value": "infra-clean_ebextensions_dir.rb"
+											}
+										]
+									},
+									{
+										"name": "AppDeployStage1",
+										"actions": [
+											{
+												"name": "AppDeployEnactHook",
+												"type": "hook",
+												"value": "appdeploy/enact"
+											},
+											{
+												"name": "AppDeployPostHook",
+												"type": "hook",
+												"value": "appdeploy/post"
+											}
+										]
+									}
+								]
+							},
+							"CMD-BundleLogs": {
+								"persistent_configuration": true,
+								"stages": [
+									{
+										"name": "BundleLogs",
+										"actions": [
+											{
+												"name": "BundleLogs",
+												"type": "sh",
+												"value": "bundleLogs.py --conf-path '/opt/elasticbeanstalk/tasks/bundlelogs.d/*' --location-prefix 'resources/environments/logs/bundle/'"
+											}
+										]
+									}
+								]
+							},
+							"CMD-SelfStartup": {
+								"stages": [
+									{
+										"name": "StartupStage0",
+										"actions": [
+											{
+												"name": "HealthdLogRotation",
+												"type": "infra",
+												"value": "infra-healthd_log_rotation.rb"
+											},
+											{
+												"name": "HealthdHTTPDLogging",
+												"type": "infra",
+												"value": "infra-healthd_httpd_logging.rb"
+											},
+											{
+												"name": "HealthdNginxLogging",
+												"type": "infra",
+												"value": "infra-healthd_nginx_logging.rb"
+											},
+											{
+												"name": "EbExtensionPreBuild",
+												"type": "infra",
+												"value": "infra-embedded_prebuild.rb"
+											},
+											{
+												"name": "AppDeployPreHook",
+												"type": "hook",
+												"value": "appdeploy/pre"
+											},
+											{
+												"name": "EbExtensionPostBuild",
+												"type": "infra",
+												"value": "infra-embedded_postbuild.rb"
+											},
+											{
+												"name": "InfraCleanEbextension",
+												"type": "infra",
+												"value": "infra-clean_ebextensions_dir.rb"
+											}
+										]
+									},
+									{
+										"name": "StartupStage1",
+										"actions": [
+											{
+												"name": "AppDeployEnactHook",
+												"type": "hook",
+												"value": "appdeploy/enact"
+											},
+											{
+												"name": "AppDeployPostHook",
+												"type": "hook",
+												"value": "appdeploy/post"
+											},
+											{
+												"name": "PostInitHook",
+												"type": "hook",
+												"value": "postinit"
+											}
+										]
+									}
+								]
+							},
+							"CMD-SystemTailLogs": {
+								"persistent_configuration": true,
+								"stages": [
+									{
+										"name": "SystemTailLogs",
+										"actions": [
+											{
+												"name": "SystemTailLogs",
+												"type": "sh",
+												"value": "tailLogs.py --concatenate --conf-path '/opt/elasticbeanstalk/tasks/systemtaillogs.d/*' --location-prefix 'resources/environments/logs/systemtail/'"
+											}
+										]
+									}
+								]
+							},
+							"CMD-RestartAppServer": {
+								"stages": [
+									{
+										"name": "RestartAppServerStage0",
+										"actions": [
+											{
+												"name": "RestartAppServerPreHook",
+												"type": "hook",
+												"value": "restartappserver/pre"
+											}
+										]
+									},
+									{
+										"name": "RestartAppServerStage1",
+										"actions": [
+											{
+												"name": "RestartAppServerEnactHook",
+												"type": "hook",
+												"value": "restartappserver/enact"
+											},
+											{
+												"name": "RestartAppServerPostHook",
+												"type": "hook",
+												"value": "restartappserver/post"
+											}
+										]
+									}
+								]
+							},
+							"CMD-ConfigDeploy": {
+								"refresh_manifest": true,
+								"stages": [
+									{
+										"name": "ConfigDeployStage0",
+										"actions": [
+											{
+												"name": "ConfigDeployPreHook",
+												"type": "hook",
+												"value": "configdeploy/pre"
+											}
+										]
+									},
+									{
+										"name": "ConfigDeployStage1",
+										"actions": [
+											{
+												"name": "ConfigDeployEnactHook",
+												"type": "hook",
+												"value": "configdeploy/enact"
+											},
+											{
+												"name": "ConfigDeployPostHook",
+												"type": "hook",
+												"value": "configdeploy/post"
+											}
+										]
+									}
+								]
+							}
+						}
+					},
+					"_LaunchS3URL": "https://elasticbeanstalk-us-east-1.s3.amazonaws.com/environments/72e0cded-3b7b-4747-b4c8-fd44e867cb2b/launch_control?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20210128T044028Z&X-Amz-SignedHeaders=host&X-Amz-Expires=43199&X-Amz-Credential=AKIAJOBAZGDDMSAZSDSQ%2F20210128%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=caa6d9691a0abe64becab7eaa021ed163393da570c839774a457441b456f2f2b",
+					"_API": {
+						"_Commands": {
+							"CMD-TailLogs": {
+								"_Stages": {
+									"01_enact": [
+										"InfoTask-TailLogs"
+									]
+								}
+							},
+							"CMD-Startup": {
+								"_RunStaged": "true",
+								"_Stages": {
+									"01_pre": [],
+									"02_enact": []
+								}
+							},
+							"CMD-AppDeploy": {
+								"_RunStaged": "true",
+								"_Stages": {
+									"01_pre": [],
+									"02_enact": []
+								}
+							},
+							"CMD-BundleLogs": {
+								"_Stages": {
+									"01_enact": [
+										"InfoTask-BundleLogs"
+									]
+								}
+							},
+							"CMD-SystemTailLogs": {
+								"_Stages": {
+									"01_enact": [
+										"InfoTask-SystemTailLogs"
+									]
+								}
+							},
+							"CMD-PatchInstance": {
+								"_Stages": {
+									"01_enact": [
+										"_Infra-PatchInstance"
+									]
+								}
+							},
+							"CMD-RestartAppServer": {
+								"_RunStaged": "false",
+								"_Stages": {
+									"01_enact": [],
+									"02_enact": []
+								}
+							},
+							"CMD-ConfigDeploy": {
+								"_RunStaged": "true",
+								"_Stages": {
+									"01_pre": [],
+									"02_enact": []
+								}
+							}
+						}
+					},
+					"AvailabilityZoneCount": "Any",
+					"InstanceSignalURL": {
+						"Ref": "AWSEBInstanceLaunchWaitHandle"
+					},
+					"_EnvironmentInfoTaskMapping": "EnvironmentInfoTasks"
+				}
+			},
+			"Type": "AWS::AutoScaling::AutoScalingGroup",
+			"DependsOn": "AWSEBBeanstalkMetadata",
+			"Properties": {
+				"MinSize": 1,
+				"LaunchConfigurationName": {
+					"Ref": "AWSEBAutoScalingLaunchConfiguration"
+				},
+				"AvailabilityZones": [
+					"us-east-1e"
+				],
+				"Cooldown": "360",
+				"VPCZoneIdentifier": [
+					"subnet-13fe2122"
+				],
+				"MaxSize": 1,
+				"Tags": [
+					{
+						"Value": {
+							"Ref": "AWSEBEnvironmentName"
+						},
+						"Key": "elasticbeanstalk:environment-name",
+						"PropagateAtLaunch": true
+					},
+					{
+						"Value": {
+							"Ref": "AWSEBEnvironmentName"
+						},
+						"Key": "Name",
+						"PropagateAtLaunch": true
+					},
+					{
+						"Value": {
+							"Ref": "AWSEBEnvironmentId"
+						},
+						"Key": "elasticbeanstalk:environment-id",
+						"PropagateAtLaunch": true
+					}
+				]
+			}
+		},
+  		"AWSEBSecurityGroupSSHIngress": {
+			"Properties": {
+				"CidrIp": "0.0.0.0/0",
+				"FromPort": "22",
+				"ToPort": "22",
+				"IpProtocol": "tcp",
+				"GroupId": {
+					"Ref": "AWSEBSecurityGroup"
+				}
+			},
+			"Type": "AWS::EC2::SecurityGroupIngress"
+		},
+		"AWSEBInstanceLaunchWaitCondition": {
+			"Type": "AWS::CloudFormation::WaitCondition",
+			"DependsOn": "AWSEBAutoScalingGroup",
+			"Properties": {
+				"Timeout": "900",
+				"Count": 1,
+				"Handle": {
+					"Ref": "AWSEBInstanceLaunchWaitHandle"
+				}
+			}
+		},
+		"AWSEBAutoScalingLaunchConfiguration": {
+			"Type": "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"KeyName": "loggingTest2KP",
+				"SecurityGroups": [
+					"sg-bab3b3b3",
+					{
+						"Ref": "AWSEBSecurityGroup"
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::Join": [
+							"",
+							[
+								"Content-Type: multipart/mixed; boundary=\"===============5189065377222898407==\"",
+								"\n",
+								"MIME-Version: 1.0",
+								"\n",
+								"",
+								"\n",
+								"--===============5189065377222898407==",
+								"\n",
+								"Content-Type: text/cloud-config; charset=\"us-ascii\"",
+								"\n",
+								"MIME-Version: 1.0",
+								"\n",
+								"Content-Transfer-Encoding: 7bit",
+								"\n",
+								"Content-Disposition: attachment; filename=\"cloud-config.txt\"",
+								"\n",
+								"",
+								"\n",
+								"#cloud-config",
+								"\n",
+								"repo_upgrade: none",
+								"\n",
+								"repo_releasever: ",
+								{
+									"Fn::FindInMap": [
+										"ContainerMeta",
+										"AMIMeta",
+										"RepoReleaseVersion"
+									]
+								},
+								"\n",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"CloudConfigOptions"
+									]
+								},
+								"\n",
+								"",
+								"\n",
+								"--===============5189065377222898407==",
+								"\n",
+								"Content-Type: text/x-shellscript; charset=\"us-ascii\"",
+								"\n",
+								"MIME-Version: 1.0",
+								"\n",
+								"Content-Transfer-Encoding: 7bit",
+								"\n",
+								"Content-Disposition: attachment; filename=\"user-data.txt\"",
+								"\n\n",
+								"#!/bin/bash",
+								"\n",
+								"exec > >(tee -a /var/log/eb-cfn-init.log|logger -t [eb-cfn-init] -s 2>/dev/console) 2>&1",
+								"\n",
+								"echo [`date -u +\"%Y-%m-%dT%H:%M:%SZ\"`] Started EB User Data",
+								"\n",
+								"set -x",
+								"\n",
+								"\n\n",
+								"function sleep_delay ",
+								"\n",
+								"{",
+								"\n",
+								"  if (( $SLEEP_TIME < $SLEEP_TIME_MAX )); then ",
+								"\n",
+								"    echo Sleeping $SLEEP_TIME",
+								"\n",
+								"    sleep $SLEEP_TIME  ",
+								"\n",
+								"    SLEEP_TIME=$(($SLEEP_TIME * 2)) ",
+								"\n",
+								"  else ",
+								"\n",
+								"    echo Sleeping $SLEEP_TIME_MAX  ",
+								"\n",
+								"    sleep $SLEEP_TIME_MAX  ",
+								"\n",
+								"  fi",
+								"\n",
+								"}",
+								"\n\n",
+								"# Executing bootstrap script",
+								"\n",
+								"SLEEP_TIME=10",
+								"\n",
+								"SLEEP_TIME_MAX=3600",
+								"\n",
+								"while true; do ",
+								"\n",
+								"  curl ",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"UserDataScript"
+									]
+								},
+								" > /tmp/ebbootstrap.sh ",
+								"\n",
+								"  RESULT=$?",
+								"\n",
+								"  if [[ \"$RESULT\" -ne 0 ]]; then ",
+								"\n",
+								"    sleep_delay ",
+								"\n",
+								"  else",
+								"\n",
+								"    SLEEP_TIME=2",
+								"\n",
+								"    /bin/bash /tmp/ebbootstrap.sh ",
+								"    '",
+								{
+									"Ref": "AWSEBInstanceLaunchWaitHandle"
+								},
+								"'",
+								"    '",
+								{
+									"Ref": "AWS::StackId"
+								},
+								"'",
+								"    '",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"AWSEBHealthdGroupId"
+									]
+								},
+								"'",
+								"    '",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"AWSEBHealthdEndpoint"
+									]
+								},
+								"'",
+								"    '",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"HealthdProxyLogLocation"
+									]
+								},
+								"'",
+								"    '",
+								{
+									"Fn::FindInMap": [
+										"AWSEBOptions",
+										"options",
+										"platformengine"
+									]
+								},
+								"'",
+								"    '",
+								{
+									"Ref": "AWS::Region"
+								},
+								"'",
+								"\n",
+								"    RESULT=$?",
+								"\n",
+								"    if [[ \"$RESULT\" -ne 0 ]]; then ",
+								"\n",
+								"      sleep_delay ",
+								"\n",
+								"    else ",
+								"\n",
+								"      exit 0  ",
+								"\n",
+								"    fi ",
+								"\n",
+								"  fi ",
+								"\n",
+								"done",
+								"\n\n",
+								"--===============5189065377222898407==-- "
+							]
+						]
+					}
+				},
+				"ImageId": {
+					"Fn::FindInMap": [
+						"AWSEBAWSRegionArch2AMI",
+						{
+							"Ref": "AWS::Region"
+						},
+						"hvm"
+					]
+				},
+				"IamInstanceProfile": "aws-elasticbeanstalk-ec2-role",
+				"InstanceType": {
+					"Ref": "InstanceType"
+				},
+				"InstanceMonitoring": false
+			}
+		},
+		"AWSEBUpdateWaitConditionttyEpx": {
+			"Type": "AWS::CloudFormation::WaitCondition",
+			"DependsOn": [
+				"AWSEBSecurityGroup",
+				"AWSEBInstanceLaunchWaitHandle",
+				"AWSEBAutoScalingGroup",
+				"AWSEBSecurityGroupSSHIngress",
+				"AWSEBInstanceLaunchWaitCondition",
+				"AWSEBAutoScalingLaunchConfiguration",
+				"AWSEBEIP",
+				"AWSEBBeanstalkMetadata"
+			],
+			"Properties": {
+				"Timeout": "43200",
+				"Count": "1",
+				"Handle": {
+					"Ref": "AWSEBUpdateWaitConditionHandlettyEpx"
+				}
+			}
+		},
+		"AWSEBEIP": {
+			"Metadata": {
+				"AWS::ElasticBeanstalk::Ext": {
+					"AutoScalingGroup": "AWSEBAutoScalingGroup"
+				},
+				"Description": "Elastic IP Address used as entry point of Single Instance Environment"
+			},
+			"Type": "AWS::EC2::EIP",
+			"Properties": {
+				"Domain": "vpc"
+			}
+		},
+		"AWSEBBeanstalkMetadata": {
+			"Metadata": {
+				"AWS::ElasticBeanstalk::Ext": {
+					"Parameters": {
+						"InstanceTypeFamily": {
+							"Ref": "InstanceTypeFamily"
+						},
+						"LogPublicationControl": {
+							"Ref": "LogPublicationControl"
+						},
+						"InstancePort": {
+							"Ref": "InstancePort"
+						},
+						"XRayEnabled": {
+							"Ref": "XRayEnabled"
+						},
+						"AWSEBEnvironmentId": {
+							"Ref": "AWSEBEnvironmentId"
+						},
+						"HooksPkgUrl": {
+							"Ref": "HooksPkgUrl"
+						},
+						"AWSEBEnvironmentName": {
+							"Ref": "AWSEBEnvironmentName"
+						},
+						"AWSEBReferrerId": {
+							"Ref": "AWSEBReferrerId"
+						},
+						"AppSource": {
+							"Ref": "AppSource"
+						},
+						"ProxyServer": {
+							"Ref": "ProxyServer"
+						},
+						"EnvironmentVariables": {
+							"Ref": "EnvironmentVariables"
+						},
+						"AWSEBAgentId": {
+							"Ref": "AWSEBAgentId"
+						},
+						"InstanceType": {
+							"Ref": "InstanceType"
+						},
+						"AWSEBEnvironmentBucket": {
+							"Ref": "AWSEBEnvironmentBucket"
+						},
+						"ProxyStaticFiles": {
+							"Ref": "ProxyStaticFiles"
+						}
+					}
+				},
+				"AWS::ElasticBeanstalk::Metadata": {
+					"EnvironmentId": "e-twrcjjmgah",
+					"RequestId": "901b28ad-4ca7-40ad-9788-9fa144a04f32",
+					"Version": "901b28ad-4ca7-40ad-9788-9fa144a04f32",
+					"EnvironmentName": "LogTest3-dev",
+					"DateUpdated": "2021-01-28T04:40:22",
+					"DateCreated": "2021-01-25T18:17:09",
+					"DeploymentVersion": 2,
+					"DateLastModified": "2021-01-28T04:40:28",
+					"Name": "e-twrcjjmgah"
+				}
+			},
+			"Type": "AWS::CloudFormation::WaitConditionHandle",
+			"DependsOn": "AWSEBEIP"
+		}	
+    },
+    "Outputs": {
+        "Bastion": {
+            "Description": "IP Address of the Bastion host",
+            "Value": {
+                "Ref": "BastionIPAddress"
+            }
+        },
+        "URL": {
+            "Description": "The URL of the Elastic Beanstalk environment",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "SampleEnvironment",
+                                "EndpointURL"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Designer": {
+            "73198e28-af32-4886-a3ed-9b2c9276e9a5": {
+                "size": {
+                    "width": 330,
+                    "height": 240
+                },
+                "position": {
+                    "x": 60,
+                    "y": 1200
+                },
+                "z": 1,
+                "embeds": [
+                    "10d879da-968c-457c-8f82-d0c9e37bfe01",
+                    "f9ec2186-3752-4634-b5fd-f6270cf7f4e3"
+                ]
+            },
+            "10d879da-968c-457c-8f82-d0c9e37bfe01": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 90,
+                    "y": 1260
+                },
+                "z": 2,
+                "parent": "73198e28-af32-4886-a3ed-9b2c9276e9a5",
+                "embeds": [],
+                "iscontainedinside": [
+                    "73198e28-af32-4886-a3ed-9b2c9276e9a5"
+                ]
+            },
+            "23aa9ee1-9f49-4e07-be10-a361d51f8f72": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1260,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "29e359d8-4517-4b82-ba46-757748aae69a": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1380,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "23aa9ee1-9f49-4e07-be10-a361d51f8f72"
+                ]
+            },
+            "bd02ab8e-c499-4faf-8c39-c99f9511c104": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1260,
+                    "y": 210
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "23aa9ee1-9f49-4e07-be10-a361d51f8f72"
+                ]
+            },
+            "a53491c6-1104-4948-a1c1-b7e0989426a2": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1380,
+                    "y": 210
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "f2ed2593-8898-4006-af2a-4493ae75ae04": {
+                "size": {
+                    "width": 1140,
+                    "height": 1050
+                },
+                "position": {
+                    "x": 60,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [
+                    "1a99caea-dd1a-4166-8312-f9fcf8ac2fe3",
+                    "aaf70a88-a87b-4e7a-9d02-f203bb68da72",
+                    "dd734940-9b55-475f-9a7f-5b1ed1678a89",
+                    "4b571f16-0ba0-4285-a0ae-23ff9678cee2",
+                    "bce39bd7-62cb-4584-ac69-23fd6f73d26d",
+                    "c7201adf-2507-4386-b677-68f67d42f176",
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                    "c686ead1-6afd-4573-ba5c-4a3fb43f87ce",
+                    "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                ]
+            },
+            "1a99caea-dd1a-4166-8312-f9fcf8ac2fe3": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 870,
+                    "y": 660
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "aaf70a88-a87b-4e7a-9d02-f203bb68da72": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 990,
+                    "y": 660
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "dd734940-9b55-475f-9a7f-5b1ed1678a89": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 870,
+                    "y": 780
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "4b571f16-0ba0-4285-a0ae-23ff9678cee2": {
+                "size": {
+                    "width": 330,
+                    "height": 240
+                },
+                "position": {
+                    "x": 480,
+                    "y": 540
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [
+                    "ce81b042-0ed5-45be-93e8-3fba21bd667b",
+                    "6d5187af-0b1c-4e4d-a878-8d8f90bd5b96"
+                ],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "ce81b042-0ed5-45be-93e8-3fba21bd667b": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 510,
+                    "y": 600
+                },
+                "z": 3,
+                "parent": "4b571f16-0ba0-4285-a0ae-23ff9678cee2",
+                "embeds": [],
+                "iscontainedinside": [
+                    "4b571f16-0ba0-4285-a0ae-23ff9678cee2"
+                ]
+            },
+            "6d5187af-0b1c-4e4d-a878-8d8f90bd5b96": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 630,
+                    "y": 600
+                },
+                "z": 3,
+                "parent": "4b571f16-0ba0-4285-a0ae-23ff9678cee2",
+                "embeds": [],
+                "iscontainedinside": [
+                    "4b571f16-0ba0-4285-a0ae-23ff9678cee2"
+                ]
+            },
+            "bce39bd7-62cb-4584-ac69-23fd6f73d26d": {
+                "size": {
+                    "width": 240,
+                    "height": 240
+                },
+                "position": {
+                    "x": 870,
+                    "y": 150
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [
+                    "ce044fef-168d-4e1b-9dfb-3ad8a6763f6d"
+                ],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "c7201adf-2507-4386-b677-68f67d42f176": {
+                "size": {
+                    "width": 150,
+                    "height": 150
+                },
+                "position": {
+                    "x": 870,
+                    "y": 450
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "1954ddc2-f601-453b-b641-31ce614bb836": {
+                "source": {
+                    "id": "4b571f16-0ba0-4285-a0ae-23ff9678cee2"
+                },
+                "target": {
+                    "id": "c7201adf-2507-4386-b677-68f67d42f176"
+                }
+            },
+            "0e83ea1b-578b-43ce-821b-5d9f4dc7695c": {
+                "source": {
+                    "id": "bce39bd7-62cb-4584-ac69-23fd6f73d26d"
+                },
+                "target": {
+                    "id": "c7201adf-2507-4386-b677-68f67d42f176"
+                }
+            },
+            "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa": {
+                "size": {
+                    "width": 420,
+                    "height": 330
+                },
+                "position": {
+                    "x": 90,
+                    "y": 150
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [
+                    "046f1071-bedb-40a6-a212-3a6554300fe2",
+                    "5d702799-08b2-4998-92e2-19af3fd0c460",
+                    "2e7b6e94-2dc5-4e22-97c8-b059c94ab372",
+                    "04f8895e-5939-427a-8381-e665fecb73c3",
+                    "b0e5c3c6-a074-466c-aad9-3a9b4bd7bd7b"
+                ],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "046f1071-bedb-40a6-a212-3a6554300fe2": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 120,
+                    "y": 210
+                },
+                "z": 3,
+                "parent": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                "embeds": [],
+                "iscontainedinside": [
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                ]
+            },
+            "5d702799-08b2-4998-92e2-19af3fd0c460": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 240,
+                    "y": 210
+                },
+                "z": 3,
+                "parent": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                "embeds": [],
+                "iscontainedinside": [
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                ]
+            },
+            "2e7b6e94-2dc5-4e22-97c8-b059c94ab372": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 120,
+                    "y": 330
+                },
+                "z": 3,
+                "parent": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                "embeds": [],
+                "iscontainedinside": [
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                ]
+            },
+            "04f8895e-5939-427a-8381-e665fecb73c3": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 240,
+                    "y": 330
+                },
+                "z": 3,
+                "parent": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                "embeds": [],
+                "iscontainedinside": [
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                ]
+            },
+            "b0e5c3c6-a074-466c-aad9-3a9b4bd7bd7b": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 360,
+                    "y": 210
+                },
+                "z": 3,
+                "parent": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa",
+                "embeds": [],
+                "iscontainedinside": [
+                    "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                ]
+            },
+            "c686ead1-6afd-4573-ba5c-4a3fb43f87ce": {
+                "size": {
+                    "width": 240,
+                    "height": 240
+                },
+                "position": {
+                    "x": 570,
+                    "y": 150
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [
+                    "b70a1c5d-51b9-4fa2-aedd-3a79d16fd45e"
+                ],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "3a144be0-c42a-4ee4-8be3-a621c4bce768": {
+                "source": {
+                    "id": "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                },
+                "target": {
+                    "id": "a53491c6-1104-4948-a1c1-b7e0989426a2"
+                }
+            },
+            "b70a1c5d-51b9-4fa2-aedd-3a79d16fd45e": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 600,
+                    "y": 210
+                },
+                "z": 3,
+                "parent": "c686ead1-6afd-4573-ba5c-4a3fb43f87ce",
+                "embeds": [],
+                "isassociatedwith": [
+                    "a53491c6-1104-4948-a1c1-b7e0989426a2"
+                ],
+                "iscontainedinside": [
+                    "c686ead1-6afd-4573-ba5c-4a3fb43f87ce"
+                ],
+                "dependson": [
+                    "3a144be0-c42a-4ee4-8be3-a621c4bce768"
+                ]
+            },
+            "4f43f079-d959-4a2e-8939-4d7e15741a54": {
+                "size": {
+                    "width": 330,
+                    "height": 240
+                },
+                "position": {
+                    "x": 90,
+                    "y": 540
+                },
+                "z": 2,
+                "parent": "f2ed2593-8898-4006-af2a-4493ae75ae04",
+                "embeds": [
+                    "4d8b7347-aca5-4cfd-8bee-68423e37157e",
+                    "f476847d-277e-445c-8ef3-64c91a38bc6c"
+                ],
+                "iscontainedinside": [
+                    "f2ed2593-8898-4006-af2a-4493ae75ae04"
+                ]
+            },
+            "f9ec2186-3752-4634-b5fd-f6270cf7f4e3": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 210,
+                    "y": 1260
+                },
+                "z": 2,
+                "parent": "73198e28-af32-4886-a3ed-9b2c9276e9a5",
+                "embeds": [],
+                "iscontainedinside": [
+                    "73198e28-af32-4886-a3ed-9b2c9276e9a5"
+                ]
+            },
+            "4d8b7347-aca5-4cfd-8bee-68423e37157e": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 120,
+                    "y": 600
+                },
+                "z": 3,
+                "parent": "4f43f079-d959-4a2e-8939-4d7e15741a54",
+                "embeds": [],
+                "isassociatedwith": [
+                    "aaf70a88-a87b-4e7a-9d02-f203bb68da72"
+                ],
+                "iscontainedinside": [
+                    "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                ]
+            },
+            "bd3ff6b2-a617-41f2-beac-c568b01c813c": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1260,
+                    "y": 330
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "4d8b7347-aca5-4cfd-8bee-68423e37157e"
+                ],
+                "dependson": [
+                    "3a144be0-c42a-4ee4-8be3-a621c4bce768"
+                ]
+            },
+            "f476847d-277e-445c-8ef3-64c91a38bc6c": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 240,
+                    "y": 600
+                },
+                "z": 3,
+                "parent": "4f43f079-d959-4a2e-8939-4d7e15741a54",
+                "embeds": [],
+                "isassociatedwith": [
+                    "dd734940-9b55-475f-9a7f-5b1ed1678a89"
+                ],
+                "iscontainedinside": [
+                    "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                ]
+            },
+            "fc161ddb-d5e6-49d8-9040-8408f2914395": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 1380,
+                    "y": 330
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "f476847d-277e-445c-8ef3-64c91a38bc6c"
+                ],
+                "dependson": [
+                    "3a144be0-c42a-4ee4-8be3-a621c4bce768"
+                ]
+            },
+            "ce044fef-168d-4e1b-9dfb-3ad8a6763f6d": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 900,
+                    "y": 210
+                },
+                "z": 3,
+                "parent": "bce39bd7-62cb-4584-ac69-23fd6f73d26d",
+                "embeds": [],
+                "isassociatedwith": [
+                    "f476847d-277e-445c-8ef3-64c91a38bc6c"
+                ],
+                "iscontainedinside": [
+                    "bce39bd7-62cb-4584-ac69-23fd6f73d26d"
+                ]
+            },
+            "bcaaa2c3-1d7c-4f6d-8394-1110d32ad92d": {
+                "source": {
+                    "id": "68209ee9-c7d3-4ea2-9c9b-7c34d6fe11aa"
+                },
+                "target": {
+                    "id": "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                }
+            },
+            "5f69adf9-efbf-4fbb-b615-d8d4812d706b": {
+                "source": {
+                    "id": "c686ead1-6afd-4573-ba5c-4a3fb43f87ce"
+                },
+                "target": {
+                    "id": "4f43f079-d959-4a2e-8939-4d7e15741a54"
+                }
+            }
+        }
+    }
+}

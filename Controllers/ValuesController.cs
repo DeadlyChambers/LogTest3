@@ -31,7 +31,7 @@ namespace LogTest3.Controllers
             var title = "DefaultGet";
             // Logger.Debug("Static" + title + " - " + dt);
             _logger.Debug("Dynamic" + title + " - " + dt);
-            return new string[] { "Try /values/Many/{types}?total=30", "Where types == IO|Error|Flat|Monster|Html|CloudWatch" };
+            return new string[] { "Try /values/Many/{types}?total=30", "Where types == IO|Error|Flat|Monster|Html|CloudWatch|Json" };
         }
 
         [HttpGet("Many/{type}")]
@@ -68,12 +68,17 @@ namespace LogTest3.Controllers
                 logger = Logger.GetLogger(typeof(CloudWatchFilter));
                 message = " for the CloudWatch Logs, check Logging.Startup LogGroup";
             }
+            else if (type.Equals("json", StringComparison.OrdinalIgnoreCase))
+            {
+                logger = Logger.GetLogger(typeof(CloudWatchFilter));
+                message = " for the Json Logs, check the content of viles";
+            }
             if (total > cap)
                 total = cap;
             Enumerable.Range(1, total).ToList().ForEach(x =>
 
             logger.Debug(JsonConvert.SerializeObject(new SomeRandomClass { id = x })));
-            return $"<b>Ran {total} Debug Statements{message} - run values/Many/IO|Error|Flat|Monster|Html|CloudWatch?total=30</b>";
+            return $"<b>Ran {total} Debug Statements{message} - run values/Many/IO|Error|Flat|Monster|Html|CloudWatch|json?total=30</b>";
         }
 
         // GET api/values/5

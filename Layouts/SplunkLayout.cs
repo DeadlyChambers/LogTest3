@@ -119,6 +119,7 @@ namespace LogTest3.Layouts
 
                 : "CST";
             var isCsv = ObjectFormat == "csv";
+            var isJson = ObjectFormat == "json";
             try
 
             {
@@ -132,14 +133,11 @@ namespace LogTest3.Layouts
                     ? new StringBuilder(loggingEvent.ToLogRecord(LoggedProcessId, EntryAssemblyName, true).ToSplunkString(isCsv))
 
                     : new StringBuilder(httpRequestLogDto.ToSplunkString(isCsv));
-                if (IncludeLevel)
+                //this will mess up json format
+                if (IncludeLevel && !isJson)
                     splunkString = new StringBuilder($"{level},{splunkString}");
-                //If we have sent a splunk key value pair in, we are specifically trying to disply
-
-                //splunk information in the logs
-
+               
                 if (loggingEvent.MessageObject is LoggingNameValuePair pair)
-
                 {
 
                     var splunkKvp = pair;
@@ -153,14 +151,25 @@ namespace LogTest3.Layouts
                     }
 
                 }
+                //JsonStart/Timestamp
+                string
+                timeStampAsString =
+                    isJson ? $"{{\"TimeStamp\"=\"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone}\"":
+                    $"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone}";
+
                 string finalString=
                 WithTimeStamp
-                    ? $"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}"
+                    ? $"{timeStampAsString},{splunkString}"
                     : splunkString.ToString();
                 if(ObjectFormat == "html")
                 {
                     finalString.Replace("\", \"", "</span><span>");
                     finalString = System.Web.HttpUtility.HtmlEncode("<div><span>" + finalString + "</span></div><br/>");
+                }
+                //CompleteJson
+                else if (isJson)
+                {
+                    finalString += "}";
                 }
                 writer.WriteLine(finalString);
             }
