@@ -51,7 +51,7 @@ namespace LogTest3.Layouts
         /// The Rolling Appender isn't exposing the LogEvent the way the non-Rolling is, so adding
         /// the timeStamp back in sort of makes sense.
         /// </summary>
-        public bool WithTimeStamp { get; set; }
+        public bool WithTimeStamp { get; set; } = true;
 
         /// <summary>
         /// Testing Metrics on Cloud Watch. The double qoutes are causing issues.
@@ -91,6 +91,7 @@ namespace LogTest3.Layouts
 
 
         }
+        
 
         /// <summary>
 
@@ -152,12 +153,16 @@ namespace LogTest3.Layouts
                     }
 
                 }
-                //CloudWatch doesn't need the timestamp
-                if(WithTimeStamp)
-                writer.WriteLine($"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}");
-                else
-                writer.WriteLine(splunkString);
-
+                string finalString=
+                WithTimeStamp
+                    ? $"{loggingEvent.TimeStamp.ToString(TimestampFormat)} {timeZone},{splunkString}"
+                    : splunkString.ToString();
+                if(ObjectFormat == "html")
+                {
+                    finalString.Replace("\", \"", "</span><span>");
+                    finalString = System.Web.HttpUtility.HtmlEncode("<div><span>" + finalString + "</span></div><br/>");
+                }
+                writer.WriteLine(finalString);
             }
 
             catch (Exception e)

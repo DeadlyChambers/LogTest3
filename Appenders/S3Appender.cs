@@ -1,80 +1,35 @@
 ﻿using Amazon.S3;
 using Amazon.S3.Model;
-using log4net.Appender;
+using log4net;
 using log4net.Core;
-using LogTest3.Layouts;
+using log4net.Util;
 using System;
-using System.Configuration;
-using System.Globalization;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace LogTest3.Appenders
 {
-    public class S3Appender : BufferingAppenderSkeleton
+    /// <summary>
+    /// An Appender to write directly to S3
+    /// </summary>
+    public class S3Appender : S3AppenderSkelton
     {
-        private string _bucketName;
-
-        public string BucketName
+        public S3Appender()
         {
-            get
-            {
-                if (String.IsNullOrEmpty(_bucketName))
-                    throw new ApplicationException("BucketNameNotSpecified");
-                return _bucketName;
-            }
-            set
-            {
-                _bucketName = value;
-            }
+            Evaluator = new MyTrigger();
+            
         }
-
-        private bool _createBucket = true;
 
         /// <summary>
-        /// If true, checks whether the bucket already exists and if not creates it.
-        /// If false, assumes that the bucket is already created and does not check.
-        /// Set this to false if the AWS credentials used by the S3Appender do not
-        /// have sufficient privileges to call ListBuckets() or PutBucket()
+        /// The trigger that will ensure the buffer call is made early. If an Error occurs, I want the
+        /// buffer to write immediately. Any other calls can wait.
         /// </summary>
-        public bool CreateBucket
+        private class MyTrigger : ITriggeringEventEvaluator
         {
-            get
+            public bool IsTriggeringEvent(LoggingEvent loggingEvent)
             {
-                return _createBucket;
+                return loggingEvent.Level >= Level.Error;
             }
-            set
-            {
-                _createBucket = value;
-            }
-        }
-
-        internal AmazonS3Client Client { get; private set; }
-
-        public override void ActivateOptions()
-        {
-            base.ActivateOptions();
-
-            Client = new AmazonS3Client(Utility.GetRegionEndpoint());
-
-            if (CreateBucket)
-            {
-                InitializeBucket();
-            }
-        }
-
-        public AmazonS3Client InitializeBucket()
-        {
-            ListBucketsResponse response = Client.ListBucketsAsync().Result;
-            bool found = response.Buckets.Any(bucket => bucket.BucketName == BucketName);
-
-            if (found == false)
-            {
-                var resp = Client.PutBucketAsync(new PutBucketRequest() { BucketName = BucketName }).Result;
-            }
-            return Client;
         }
 
         /// <summary>
@@ -88,69 +43,63 @@ namespace LogTest3.Appenders
         /// </remarks>
         protected override void SendBuffer(LoggingEvent[] events)
         {
-            Parallel.ForEach(events, l => UploadEvent(l, Client));
+            var content = new StringBuilder();
+            foreach (var loggingevent in events)
+            {
+                try
+                {
+                    content.Append(RenderLoggingEvent(loggingevent));
+                }catch(Exception e)
+                {
+                    _logInception.Error("Exception Rendering Event in Logging Appender", e);
+                    this.Append(loggingevent);
+                }
+            }
+            new Task(() => UploadEvent(Client, content.ToString())).Start();
         }
 
-        private void UploadEvent(LoggingEvent loggingEvent, AmazonS3Client client)
+        /// <summary>
+        /// TODO: Just delete this entire method as it is here to specifically throw an error for testing
+        /// </summary>
+        /// <param name="loggingEvent"></param>
+        protected override void Append(LoggingEvent loggingEvent)
         {
-            var timeZone = TimeZoneInfo.Local.IsDaylightSavingTime(loggingEvent.TimeStamp)
-                ? "CDT"
-                : "CST";
+         
+            //TODO: Test Code to prove Exception handling in Appender
+            if (loggingEvent.ExceptionObject is MissingFieldException)
+                throw new ApplicationException("Force Exception from S3MemoryAppender");
+            else if (loggingEvent.ExceptionObject is ArithmeticException)
+                _logInception.Error("Force Exception form S3MemoryAppender", new ApplicationException("Exception Inception"));
+            
+            base.Append(loggingEvent);
+        }
 
+        /// <summary>
+        /// Upload to S3
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="content"></param>
+        /// <returns></returns>
+        private async Task UploadEvent(AmazonS3Client client, string content)
+        {
+            ///TODO: Delete as this is a forced error
+            var bucketName = _bucketName;
+            if (content.Contains("THROW AN ERROR"))
+                bucketName = "THISBUCKETDOESNTEXIST";
             _ = client.PutObjectAsync(new PutObjectRequest
             {
-                BucketName = _bucketName,
-                Key = Filename(Guid.NewGuid().ToString()),
-              //  ContentBody = Utility.GetXmlString(loggingEvent)
-              ContentBody = $"{loggingEvent.TimeStamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")} {timeZone}" + new StringBuilder(
-                  loggingEvent.ToLogRecord("S3AppenderDomainHardCoded","LogTest3AssemblyHardCoded", true)
-                  .ToSplunkString()).ToString()
-            }).Result;
-
-            // log.txt
-            // log.1.txt
-        }
-
-        private static string Filename(string key)
-        {
-            // return string.Format("s3appender.{0}.log4net.xml", key);
-            return string.Format("s3appender.{0}.txt", key);
+                BucketName = bucketName,
+                Key = Filename(),
+                ContentBody = content            
+            });
         }
     }
 
-
-    internal class Utility
+    /// <summary>
+    /// TODO: Delete this, used specifically for testing Logging calls inside of the Appenders
+    /// </summary>
+    public class ExceptionInception
     {
-        internal static Amazon.RegionEndpoint GetRegionEndpoint()
-        {
-            var regionEndpoint = ConfigurationManager.AppSettings["Log4net.Appender.Amazon.RegionEndpoint"];
-            return regionEndpoint == null ? Amazon.RegionEndpoint.USEast1 : Amazon.RegionEndpoint.GetBySystemName(regionEndpoint);
-        }
 
-        internal static string GetXmlString(LoggingEvent loggingEvent)
-        {
-            var xmlMessage = new XElement(
-                "LogEntry",
-                new XElement("UserName", loggingEvent.UserName),
-                new XElement("TimeStamp",
-                             loggingEvent.TimeStamp.ToString(CultureInfo.InvariantCulture)),
-                new XElement("ThreadName", loggingEvent.ThreadName),
-                new XElement("LoggerName", loggingEvent.LoggerName),
-                new XElement("Level", loggingEvent.Level.ToString()),
-                new XElement("Identity", loggingEvent.Identity),
-                new XElement("Domain", loggingEvent.Domain),
-                new XElement("CreatedOn", DateTime.UtcNow.ToString(CultureInfo.InvariantCulture)),
-                new XElement("RenderedMessage", loggingEvent.RenderedMessage)
-                );
-
-            string exceptionStr = loggingEvent.GetExceptionString();
-
-            if (!string.IsNullOrEmpty(exceptionStr))
-            {
-                xmlMessage.Add(new XElement("Exception", exceptionStr));
-            }
-
-            return xmlMessage.ToString();
-        }
     }
 }

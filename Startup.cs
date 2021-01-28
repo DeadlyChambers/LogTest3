@@ -33,7 +33,7 @@ namespace LogTest3
             
             //How to setup the non config version. for some reason though I am not
             //able to write any of my debug statements, so I am leaving it out for now
-            //NoConfigLogger.ConfigureLog4net();
+            NoConfigLogger.ConfigureLog4net();
 
             //app.UseHttpsRedirection();
 
@@ -42,7 +42,7 @@ namespace LogTest3
             app.UseAuthorization();
 
             // global error handler
-            app.UseMiddleware<ErrorHandlerMiddleware>();
+            app.UseMiddleware<IOCustomMiddleware>();
 
             app.UseEndpoints(endpoints =>
             {

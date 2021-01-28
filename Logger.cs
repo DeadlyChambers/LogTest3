@@ -3,6 +3,8 @@ using log4net;
 using log4net.Core;
 using log4net.Layout;
 using log4net.Repository.Hierarchy;
+using LogTest3.Appenders;
+using LogTest3.Layouts;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,64 +14,108 @@ using System.Threading.Tasks;
 using System.Xml;
 namespace LogTest3
 {
+    //TODO: This extension method is a little over kill
     public static class Logger
-    {
-
-        private static readonly string LOG_CONFIG_FILE = @"log4net.config";
-
-        private static readonly log4net.ILog _log = GetLogger(typeof(Logger));
-
+    {        
         public static ILog GetLogger(Type type)
         {
             return LogManager.GetLogger(type);
         }
-
-        public static void Debug(object message)
-        {
-            SetLog4NetConfiguration();
-            _log.Debug(message);
-        }
-
-        private static void SetLog4NetConfiguration()
-        {
-            XmlDocument log4netConfig = new XmlDocument();
-            log4netConfig.Load(File.OpenRead(LOG_CONFIG_FILE));
-
-            var repo = LogManager.CreateRepository(
-                Assembly.GetEntryAssembly(), typeof(Hierarchy));
-
-            log4net.Config.XmlConfigurator.Configure(repo, log4netConfig["log4net"]);
-        }
     }
 
+    /// <summary>
+    /// TODO: How to Setup Log4net Appenders, Layouts, and Filters without using log4net.config if that
+    /// is somethine we want/need
+    /// </summary>
     public static class NoConfigLogger
     {
         public static void ConfigureLog4net()
         {
             Hierarchy hierarchy = (Hierarchy)LogManager.GetRepository(Assembly.GetEntryAssembly());
-            PatternLayout patternLayout = new PatternLayout
+            //PatternLayout patternLayout = new PatternLayout
+            //{
+            //    ConversionPattern = "%-4timestamp [%thread] %-5level %logger %ndc - %message%newline"
+            //};
+            var splunkLayoutCW = new SplunkLayout()
             {
-                ConversionPattern = "%-4timestamp [%thread] %-5level %logger %ndc - %message%newline"
-            };
-            patternLayout.ActivateOptions();
+                LoggedProcessId = "LogTest3Rolling.LAB",
+                TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ",
+                WithTimeStamp = false,
 
-            AWSAppender appender = new AWSAppender
+            };
+            splunkLayoutCW.ActivateOptions();
+
+            //You should be able create any appender and load it into the LogManager which
+            //would allow you to drop the log4net.config
+            AWSAppender cWappender = new AWSAppender
             {
                 Name="StartupLogger",
-                Layout = patternLayout,
+                Layout = splunkLayoutCW,
+                BatchPushInterval = new TimeSpan(0,0,0,5,0),
                 Threshold = Level.Debug,
                 // Set log group and region. Assume credentials will be found using the default profile or IAM credentials.
                 LogGroup = "Logging.Startup",
                 Region = "us-east-1"
             };
+            var cwFilter = new log4net.Filter.LoggerMatchFilter()
+            {
+                LoggerToMatch = "LogTest3.HtmlFilter",
+                AcceptOnMatch = true
+            };
+            cwFilter.ActivateOptions();
+            cWappender.AddFilter(cwFilter);
+            cWappender.AddFilter(new log4net.Filter.DenyAllFilter());
 
-            appender.ActivateOptions();
-            hierarchy.Root.AddAppender(appender);
-            
+            var splunkLayoutS3 = new SplunkLayout()
+            {
+                LoggedProcessId = "LogTest3Rolling.LAB",
+                TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ",
+                ObjectFormat = "html",
+                Header = "<h1>Adding a Header???</h1>",
+                Footer = "<h3>Also a footer??? Oh la la</h3>"
+            };
+            splunkLayoutS3.ActivateOptions();
+            var s3appender = new S3Appender()
+            {
+                Name = "S3NoConfigAppender",
+                Layout = splunkLayoutS3,
+                Threshold = Level.Debug,
+                BufferSize = 5,
+                LibraryLogFileName = "_Log_NoConfigError",
+                BucketName = "logtest2bucketpoc",
+                LogDirectory = "WhatIsThis",
+                FilePrefix = "S3Appender",
+                FileExtension = "html" ,
+                
+            };
+            var htmlFilter = new log4net.Filter.LoggerMatchFilter()
+            {
+                LoggerToMatch = "LogTest3.HtmlFilter",
+                AcceptOnMatch = true
+            };
+            htmlFilter.ActivateOptions();
+            s3appender.AddFilter(htmlFilter);
+            s3appender.AddFilter(new log4net.Filter.DenyAllFilter());
+
+            s3appender.ActivateOptions();
+            hierarchy.Root.AddAppender(s3appender);
+            cWappender.ActivateOptions();
+            hierarchy.Root.AddAppender(cWappender);
+
             hierarchy.Root.Level = Level.All;
            
             hierarchy.Configured = true;
         }
+    }
+
+    public class HtmlFilter
+    {
+
+    }
+
+    public class CloudWatchFilter
+    {
+
     }
 }
 

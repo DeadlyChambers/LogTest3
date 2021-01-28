@@ -10,14 +10,14 @@ using System.Threading.Tasks;
 
 namespace LogTest3
 {
-    public class ErrorHandlerMiddleware
+    public class IOCustomMiddleware
     {
         private readonly RequestDelegate _next;
         private readonly ILog _logger;
-        public ErrorHandlerMiddleware(RequestDelegate next)
+        public IOCustomMiddleware(RequestDelegate next)
         {
             _next = next;
-            _logger = Logger.GetLogger(typeof(ErrorHandlerMiddleware));
+            _logger = Logger.GetLogger(typeof(IOCustomMiddleware));
         }
 
         public async Task Invoke(HttpContext context)
