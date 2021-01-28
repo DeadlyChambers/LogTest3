@@ -29,7 +29,7 @@ namespace LogTest3
     /// </summary>
     public static class NoConfigLogger
     {
-        public static void ConfigureLog4net()
+        public static void ConfigureCloudWatchLog4net()
         {
             Hierarchy hierarchy = (Hierarchy)LogManager.GetRepository(Assembly.GetEntryAssembly());
             //PatternLayout patternLayout = new PatternLayout
@@ -49,9 +49,9 @@ namespace LogTest3
             //would allow you to drop the log4net.config
             AWSAppender cWappender = new AWSAppender
             {
-                Name="StartupLogger",
+                Name = "StartupLogger",
                 Layout = splunkLayoutCW,
-                BatchPushInterval = new TimeSpan(0,0,0,5,0),
+                BatchPushInterval = new TimeSpan(0, 0, 0, 5, 0),
                 Threshold = Level.Debug,
                 // Set log group and region. Assume credentials will be found using the default profile or IAM credentials.
                 LogGroup = "Logging.Startup",
@@ -59,13 +59,20 @@ namespace LogTest3
             };
             var cwFilter = new log4net.Filter.LoggerMatchFilter()
             {
-                LoggerToMatch = "LogTest3.HtmlFilter",
+                LoggerToMatch = "LogTest3.CloudWatchFilter",
                 AcceptOnMatch = true
             };
             cwFilter.ActivateOptions();
             cWappender.AddFilter(cwFilter);
             cWappender.AddFilter(new log4net.Filter.DenyAllFilter());
-
+            cWappender.ActivateOptions();
+            hierarchy.Root.AddAppender(cWappender);
+            hierarchy.Root.Level = Level.All;
+            hierarchy.Configured = true;
+        }
+        public static void ConfigureLog4net()
+        {
+            Hierarchy hierarchy = (Hierarchy)LogManager.GetRepository(Assembly.GetEntryAssembly());
             var splunkLayoutS3 = new SplunkLayout()
             {
                 LoggedProcessId = "LogTest3Rolling.LAB",
@@ -84,7 +91,7 @@ namespace LogTest3
                 LibraryLogFileName = "_Log_NoConfigError",
                 BucketName = "logtest2bucketpoc",
                 LogDirectory = "WhatIsThis",
-                FilePrefix = "S3Appender",
+                FilePrefix = "S3Appender_html",
                 FileExtension = "html" ,
                 
             };
@@ -99,8 +106,7 @@ namespace LogTest3
 
             s3appender.ActivateOptions();
             hierarchy.Root.AddAppender(s3appender);
-            cWappender.ActivateOptions();
-            hierarchy.Root.AddAppender(cWappender);
+           
 
             hierarchy.Root.Level = Level.All;
            

@@ -34,6 +34,7 @@ namespace LogTest3
             //How to setup the non config version. for some reason though I am not
             //able to write any of my debug statements, so I am leaving it out for now
             NoConfigLogger.ConfigureLog4net();
+            NoConfigLogger.ConfigureCloudWatchLog4net();
 
             //app.UseHttpsRedirection();
 
