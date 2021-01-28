@@ -70,7 +70,7 @@ namespace LogTest3.Controllers
             }
             else if (type.Equals("json", StringComparison.OrdinalIgnoreCase))
             {
-                logger = Logger.GetLogger(typeof(CloudWatchFilter));
+                logger = Logger.GetLogger(typeof(JsonFilter));
                 message = " for the Json Logs, check the content of viles";
             }
             if (total > cap)
